@@ -1236,6 +1236,27 @@
             return label.charAt(0).toLocaleUpperCase(UI_LOCALE) + label.slice(1);
         }
 
+        let englishLangNames = null;
+        try { englishLangNames = new Intl.DisplayNames(['en'], { type: 'language' }); } catch {}
+        const langSearchCache = new Map();
+
+        /** Для поиска: нижний регистр и без диакритики («espanol» найдёт «Español», «tieng viet» — «Tiếng Việt») */
+        function foldForSearch(str) {
+            return String(str).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+        }
+
+        /** Все имена языка, по которым его можно найти: русское, родное, на языке интерфейса и английское */
+        function langSearchText(obj) {
+            let text = langSearchCache.get(obj.name);
+            if (text) return text;
+            const code = obj.bcp47 === 'zh-CN' ? 'zh-Hans' : obj.bcp47 === 'zh-TW' ? 'zh-Hant' : obj.bcp47.split('-')[0];
+            let english = '';
+            try { english = englishLangNames?.of(code) || ''; } catch {}
+            text = foldForSearch([obj.name, obj.native, langDisplayName(obj.name), english].join(' | '));
+            langSearchCache.set(obj.name, text);
+            return text;
+        }
+
         /** Перевести все надписи, которые лежат в разметке (data-i18n и data-i18n-атрибуты) */
         function applyStaticI18n() {
             document.documentElement.lang = UI_LOCALE;
@@ -1684,10 +1705,8 @@
                 ...LANGUAGES.slice(0, POPULAR_LANG_COUNT),
                 ...LANGUAGES.slice(POPULAR_LANG_COUNT).sort((x, y) => langDisplayName(x.name).localeCompare(langDisplayName(y.name), UI_LOCALE))
             ];
-            const filtered = ordered.filter(item =>
-                !q || item.name.toLowerCase().includes(q) || item.native.toLowerCase().includes(q)
-                    || langDisplayName(item.name).toLowerCase().includes(q)
-            );
+            const nq = foldForSearch(q);
+            const filtered = ordered.filter(item => !q || langSearchText(item).includes(nq));
 
             filtered.forEach(item => {
                 frag.appendChild(createLangOption({
