@@ -4697,8 +4697,16 @@ ${langHint}
                     row.appendChild(bubble);
                 } else if (m.error) {
                     bubble.textContent = m.error;
+                    bubble.classList.remove('text-white', 'text-[20px]');
                     bubble.classList.add('text-rose-300', 'text-[15px]');
                     row.appendChild(bubble);
+                    // Повторить можно, если есть что отправить: сохранённая запись или набранный текст
+                    if (m.audio || (m.original && !m.original.startsWith('🎤'))) {
+                        const retry = el('button', 'h-9 px-3.5 shrink-0 rounded-full bg-white/10 hover:bg-white/15 text-white text-[14px] font-semibold active:scale-95 transition-all', t('retry'));
+                        retry.type = 'button';
+                        retry.addEventListener('click', (e) => { e.stopPropagation(); retryDialogMessage(m); });
+                        row.appendChild(retry);
+                    }
                 } else {
                     bubble.textContent = m.translated;
                     row.append(bubble, speakerButton(m.translated, toLang));
@@ -4835,6 +4843,22 @@ ${langHint}
             const msg = { from: side, original: '🎤 …', translated: '', pending: true, error: '' };
             state.dialog.log.push(msg);
             state.dialog.log = state.dialog.log.slice(-DIALOG_LOG_LIMIT);
+            await runDialogAudio(msg, audio);
+        }
+
+        /**
+         * Распознать и перевести голосовую фразу прямо в её сообщении.
+         * Запись хранится в сообщении (только в памяти), пока фраза не дошла, — её можно отправить ещё раз.
+         */
+        async function runDialogAudio(msg, audio) {
+            const from = state.dialog[msg.from];
+            const to = state.dialog[msg.from === 'a' ? 'b' : 'a'];
+            const mode = state.dialog.essence ? 'essence' : 'fast';
+            const signal = dialogAbort?.signal;
+            msg.audio = audio;
+            msg.pending = true;
+            msg.error = '';
+            msg.original = '🎤 …';
             renderDialog();
 
             try {
@@ -4845,6 +4869,7 @@ ${langHint}
                 } else {
                     msg.original = data.transcript;
                     msg.translated = data.translation;
+                    delete msg.audio; // текст получен — запись больше не нужна
                     if (!data.translation) msg.error = t('err.translateShort');
                     else translationCache.set(translationKey(data.transcript, from, to, mode),
                         { translation: data.translation, translit: data.translit, detectedLang: data.detectedLang });
@@ -4860,6 +4885,13 @@ ${langHint}
             if (signal?.aborted) return;
             renderDialog();
             if (msg.translated && state.dialog.autoSpeak && state.dialog.log.includes(msg)) speakText(msg.translated, to);
+        }
+
+        /** «Повторить» у сообщения с ошибкой: голос — отправить ту же запись, текст — перевести заново */
+        function retryDialogMessage(msg) {
+            if (msg.pending) return;
+            if (msg.audio) runDialogAudio(msg, msg.audio);
+            else if (msg.original && !msg.original.startsWith('🎤')) retranslateDialogMessage(msg, msg.original);
         }
 
         /** Нажатие на микрофон: первое — начать говорить, второе — закончить и отправить перевод */
