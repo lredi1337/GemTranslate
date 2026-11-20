@@ -320,7 +320,7 @@
         <!-- Шапка: левый угол пустой — там системная кнопка закрытия -->
         <header class="relative shrink-0 h-16 flex items-center justify-end gap-1.5 pl-16 pr-2 sm:pl-4" style="margin-top: env(safe-area-inset-top);">
             <h2 class="absolute left-1/2 -translate-x-1/2 text-lg font-semibold text-white pointer-events-none" data-i18n="dialog">Диалог</h2>
-            <button data-i18n="dialog.essence" id="dialog-essence-btn" type="button" aria-pressed="false" title="Передавать суть: без слов-паразитов, повторов и воды" data-i18n-title="dialog.essenceTitle" class="h-9 px-3.5 rounded-full text-[13px] font-medium bg-white/[0.06] text-slate-300 transition-colors">Суть</button>
+            <button data-i18n="dialog.essence" id="dialog-essence-btn" type="button" aria-pressed="false" title="Передавать суть: смысл и посыл важнее дословности" data-i18n-title="dialog.essenceTitle" class="h-9 px-3.5 rounded-full text-[13px] font-medium bg-white/[0.06] text-slate-300 transition-colors">Суть</button>
             <button id="dialog-close-btn" type="button" title="Закрыть диалог" data-i18n-title="dialog.close" aria-label="Закрыть диалог" data-i18n-aria-label="dialog.close" class="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 hover:bg-white/10 active:scale-90 transition-all">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -416,7 +416,7 @@
                         <button type="button" role="menuitemradio" data-mode="essence" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between gap-2">
                             <div class="min-w-0">
                                 <div data-i18n="mode.essence" class="font-semibold text-yx-accent">Передать суть</div>
-                                <div class="text-[10.5px] text-yx-muted font-normal leading-tight mt-0.5" data-i18n="mode.essenceHint">Без воды и слов-паразитов</div>
+                                <div class="text-[10.5px] text-yx-muted font-normal leading-tight mt-0.5" data-i18n="mode.essenceHint">Смысл важнее дословности</div>
                             </div>
                             <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
                         </button>
@@ -721,7 +721,7 @@
             },
             essence: {
                 label: 'Передать суть',
-                prompt: 'Убери все слова-паразиты, повторы, междометия, воду и сбивчивые формулировки (характерные для длинного голосового ввода). Вычлени главную мысль, ключевые факты и намерение говорящего, и сформулируй это максимально чётко, логично и естественно на целевом языке так, чтобы собеседник с первого раза однозначно понял суть сообщения. Сохраняй все важные детали (даты, имена, суммы, просьбы), но делай текст компактным и связным.'
+                prompt: 'Главная задача — максимально точно передать смысл и посыл сообщения, а не его слова. Ты можешь свободно менять слова и их порядок, полностью перестраивать структуру текста, объединять и разбивать предложения, заменять обороты на те, что естественно звучат на целевом языке, убирать слова-паразиты, повторы и сбивчивость. Ничего не добавляй от себя и не теряй важного: факты, имена, даты, числа, суммы, просьбы, тон и намерение говорящего должны дойти до собеседника полностью.'
             },
             casual: {
                 label: 'Разговорный',
@@ -997,7 +997,7 @@
                 'copyTranslation': 'Копировать перевод', 'copy.done': 'Перевод скопирован', 'copy.failed': 'Не удалось скопировать текст',
                 'sourceLang': 'Исходный язык', 'targetLang': 'Язык перевода', 'swap': 'Поменять языки местами',
                 'voice': 'Голосовой ввод', 'camera': 'Камера', 'dialog': 'Диалог',
-                'mode.fast': 'Быстрый перевод', 'mode.essence': 'Передать суть', 'mode.essenceHint': 'Без воды и слов-паразитов',
+                'mode.fast': 'Быстрый перевод', 'mode.essence': 'Передать суть', 'mode.essenceHint': 'Смысл важнее дословности',
                 'mode.casual': 'Разговорный', 'mode.formal': 'Деловой', 'mode.literal': 'Дословный',
                 'history.open': 'История и избранное', 'history.search': 'Поиск по истории...', 'history.favorites': '★ Избранное',
                 'history.emptyRecent': 'Здесь появятся ваши переводы', 'history.notFound': 'Ничего не найдено',
@@ -1032,8 +1032,8 @@
                 'rec.silent': 'Ничего не слышно — попробуйте ещё раз', 'rec.notRecognized': 'Речь не распознана — попробуйте ещё раз',
                 'tts.unavailable': 'Озвучка недоступна для этого языка',
                 'dialog.aria': 'Режим диалога', 'dialog.close': 'Закрыть диалог', 'dialog.essence': 'Суть',
-                'dialog.essenceTitle': 'Передавать суть: без слов-паразитов, повторов и воды',
-                'dialog.essenceOn': 'Диалог: передаю суть, без воды', 'dialog.essenceOff': 'Диалог: обычный перевод',
+                'dialog.essenceTitle': 'Передавать суть: смысл и посыл важнее дословности',
+                'dialog.essenceOn': 'Диалог: передаю смысл, а не слова', 'dialog.essenceOff': 'Диалог: обычный перевод',
                 'dialog.autoSpeak': 'Озвучивать автоматически', 'dialog.clearHistory': 'Очистить историю',
                 'dialog.clearConfirm': 'Нажмите ещё раз, чтобы очистить диалог', 'dialog.cleared': 'Диалог очищен',
                 'dialog.write': 'Написать сообщение…', 'dialog.typeSideTitle': 'На чьём языке вы пишете — нажмите, чтобы сменить',
@@ -1060,7 +1060,7 @@
                 'copyTranslation': 'Copy translation', 'copy.done': 'Translation copied', 'copy.failed': 'Could not copy the text',
                 'sourceLang': 'Source language', 'targetLang': 'Target language', 'swap': 'Swap languages',
                 'voice': 'Voice input', 'camera': 'Camera', 'dialog': 'Conversation',
-                'mode.fast': 'Quick translation', 'mode.essence': 'Convey the gist', 'mode.essenceHint': 'No filler, just the point',
+                'mode.fast': 'Quick translation', 'mode.essence': 'Convey the gist', 'mode.essenceHint': 'Meaning over wording',
                 'mode.casual': 'Casual', 'mode.formal': 'Formal', 'mode.literal': 'Literal',
                 'history.open': 'History and favorites', 'history.search': 'Search history…', 'history.favorites': '★ Favorites',
                 'history.emptyRecent': 'Your translations will appear here', 'history.notFound': 'Nothing found',
@@ -1095,8 +1095,8 @@
                 'rec.silent': 'Nothing heard — please try again', 'rec.notRecognized': 'Speech not recognized — please try again',
                 'tts.unavailable': 'Speech is not available for this language',
                 'dialog.aria': 'Conversation mode', 'dialog.close': 'Close conversation', 'dialog.essence': 'Gist',
-                'dialog.essenceTitle': 'Convey the gist: no filler words or repetition',
-                'dialog.essenceOn': 'Conversation: conveying the gist', 'dialog.essenceOff': 'Conversation: regular translation',
+                'dialog.essenceTitle': 'Convey the gist: meaning and intent over exact wording',
+                'dialog.essenceOn': 'Conversation: conveying meaning, not words', 'dialog.essenceOff': 'Conversation: regular translation',
                 'dialog.autoSpeak': 'Speak automatically', 'dialog.clearHistory': 'Clear history',
                 'dialog.clearConfirm': 'Tap again to clear the conversation', 'dialog.cleared': 'Conversation cleared',
                 'dialog.write': 'Type a message…', 'dialog.typeSideTitle': 'The language you are typing in — tap to switch',
@@ -2108,7 +2108,7 @@ ${sourceRule}
                 : `Исходный язык: ${sourceLang}.`;
 
             const essenceRule = mode === 'essence'
-                ? '\n- ОСОБЫЙ РЕЖИМ «ПЕРЕДАТЬ СУТЬ»: ты не обязан переводить каждое слово буквально. Сожми и очисти поток сознания говорящего от слов-паразитов, повторов и лишних отступлений до ясной, структурированной и естественной сути на целевом языке строго от первого лица (от лица автора сообщения).'
+                ? '\n- ОСОБЫЙ РЕЖИМ «ПЕРЕДАТЬ СУТЬ»: дословность не важна, важны смысл и посыл. Меняй слова местами и полностью меняй структуру текста, если так собеседник точнее и естественнее поймёт, что хотел сказать автор. Говори от первого лица автора, как будто он сам сказал это на целевом языке.'
                 : '';
 
             const systemInstruction = `Ты — профессиональный синхронный переводчик, владеющий всеми языками мира.
