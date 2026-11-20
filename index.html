@@ -357,9 +357,6 @@
         <form id="dialog-form" class="shrink-0 flex items-end gap-2 px-4 pt-2">
             <button id="dialog-type-side" type="button" title="На чьём языке вы пишете — нажмите, чтобы сменить" data-i18n-title="dialog.typeSideTitle" class="h-11 min-w-[3rem] px-2.5 rounded-2xl text-xs font-bold uppercase shrink-0 transition-colors"></button>
             <textarea id="dialog-input" rows="1" autocomplete="off" enterkeyhint="send" placeholder="Написать сообщение…" data-i18n-placeholder="dialog.write" class="flex-1 min-w-0 min-h-[2.75rem] bg-white/[0.06] rounded-2xl px-4 py-[11px] text-[15px] leading-[22px] text-white placeholder-[#8A8D95] resize-none overflow-y-auto inner-scroll focus:outline-none focus:ring-1 focus:ring-yx-accent select-text"></textarea>
-            <button type="submit" aria-label="Отправить" data-i18n-aria-label="send" class="w-11 h-11 shrink-0 rounded-full bg-white/[0.08] hover:bg-white/[0.12] text-white flex items-center justify-center active:scale-90 transition-all">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m0 0l-6-6m6 6l-6 6"/></svg>
-            </button>
         </form>
 
         <!-- Микрофоны собеседников с выбором языка -->
@@ -1665,10 +1662,15 @@
             if (vv && vv.offsetTop > 0) window.scrollTo(0, 0);
 
             const isShrunk = (baseViewportHeight - currentHeight) > 120;
+            // Встроенное окно чата иногда не присылает «эталонную» высоту без клавиатуры.
+            // Тогда смотрим так: курсор в текстовом поле и окно заметно ниже экрана телефона.
+            const active = document.activeElement;
+            const typing = !!active && (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && /^(text|search)$/.test(active.type)));
+            const muchShorterThanScreen = window.screen?.height && currentHeight < window.screen.height * 0.68;
 
             // Компактный режим — только когда клавиатура реально открыта (экран стал ниже).
             // Просто фокус в поле не считается: клавиатуру могли закрыть кнопкой «назад», а кнопки нужны.
-            document.body.classList.toggle('keyboard-open', IS_TOUCH && isShrunk);
+            document.body.classList.toggle('keyboard-open', IS_TOUCH && (isShrunk || (typing && muchShorterThanScreen)));
         }
 
         function setupViewportAdapter() {
@@ -1698,6 +1700,11 @@
                 setTimeout(syncViewportLayout, 250);
             });
             els.sourceText.addEventListener('blur', () => setTimeout(syncViewportLayout, 120));
+            document.addEventListener('focusin', () => {
+                setTimeout(syncViewportLayout, 80);
+                setTimeout(syncViewportLayout, 350);
+            });
+            document.addEventListener('focusout', () => setTimeout(syncViewportLayout, 150));
 
             syncViewportLayout();
         }
