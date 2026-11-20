@@ -1713,8 +1713,11 @@
         }
 
         /** Курсор в поле на сенсорном экране = клавиатура открыта: прячем то, что ей мешает */
+        /** Поля, при наборе в которых клавиатура закрывает большие кнопки. Поиск языка и истории — в окнах поверх, их не считаем */
+        const hidesPanelsWhileTyping = (node) => node === els.sourceText || node === els.dialogInput;
+
         function syncTypingState() {
-            document.body.classList.toggle('typing', IS_TOUCH && isTypingField(document.activeElement));
+            document.body.classList.toggle('typing', IS_TOUCH && hidesPanelsWhileTyping(document.activeElement));
             updateDialogKeyboardReserve();
         }
 
@@ -1784,7 +1787,7 @@
             els.sourceText.addEventListener('blur', () => setTimeout(syncViewportLayout, 120));
             document.addEventListener('focusin', (e) => {
                 // Включаем сразу, выключаем только с задержкой (см. focusout) — чтобы тап по кнопке не «уехал»
-                if (isTypingField(e.target)) syncTypingState();
+                if (hidesPanelsWhileTyping(e.target)) syncTypingState();
                 setTimeout(syncViewportLayout, 80);
                 setTimeout(syncViewportLayout, 350);
             });
