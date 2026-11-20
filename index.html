@@ -121,6 +121,9 @@
         #camera-stage.zoomable { touch-action: none; }
         #captured-wrapper { will-change: transform; }
 
+        /* Долгое нажатие на сообщение — наше меню, а не системное выделение текста */
+        #dialog-messages { -webkit-touch-callout: none; }
+
         /* Тап по кнопке срабатывает сразу, без ожидания двойного тапа */
         button { touch-action: manipulation; }
 
@@ -315,8 +318,8 @@
     <!-- Режим диалога: переписка, где каждая фраза сразу переведена -->
     <div id="dialog-modal" role="dialog" aria-modal="true" aria-label="Режим диалога" class="hidden fixed inset-0 z-50 bg-yx-sheet flex flex-col select-none" style="padding-bottom: env(safe-area-inset-bottom);">
         <!-- Шапка: левый угол пустой — там системная кнопка закрытия -->
-        <header class="shrink-0 h-16 flex items-center gap-1.5 pl-16 pr-2 sm:pl-4" style="margin-top: env(safe-area-inset-top);">
-            <h2 class="flex-1 min-w-0 text-lg font-semibold text-white truncate">Диалог</h2>
+        <header class="relative shrink-0 h-16 flex items-center justify-end gap-1.5 pl-16 pr-2 sm:pl-4" style="margin-top: env(safe-area-inset-top);">
+            <h2 class="absolute left-1/2 -translate-x-1/2 text-lg font-semibold text-white pointer-events-none">Диалог</h2>
             <button id="dialog-essence-btn" type="button" aria-pressed="false" title="Передавать суть: без слов-паразитов, повторов и воды" class="h-9 px-3.5 rounded-full text-[13px] font-medium bg-white/[0.06] text-slate-300 transition-colors">Суть</button>
             <button id="dialog-close-btn" type="button" title="Закрыть диалог" aria-label="Закрыть диалог" class="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 hover:bg-white/10 active:scale-90 transition-all">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -336,11 +339,17 @@
         </div>
 
         <!-- Переписка -->
-        <div id="dialog-log" class="flex-1 min-h-0 overflow-y-auto inner-scroll px-4 py-4 select-text">
+        <div id="dialog-log" class="flex-1 min-h-0 overflow-y-auto inner-scroll px-4 py-4">
             <div id="dialog-messages" class="flex flex-col gap-5"></div>
             <div class="flex justify-center pt-6 pb-1">
                 <button id="dialog-clear-btn" type="button" class="h-10 px-5 rounded-full bg-white/[0.07] hover:bg-white/10 text-sm font-medium text-slate-100 active:scale-95 transition-all">Очистить историю</button>
             </div>
+        </div>
+
+        <!-- Режим редактирования сообщения -->
+        <div id="dialog-edit-bar" class="hidden shrink-0 mx-4 mt-2 pl-3.5 pr-1.5 h-10 rounded-xl bg-yx-accent/[0.12] border border-yx-accent/20 text-[13px] text-sky-200 flex items-center justify-between gap-2">
+            <span class="truncate">✎ Редактирование сообщения</span>
+            <button id="dialog-edit-cancel" type="button" class="h-8 px-3 shrink-0 rounded-lg text-[13px] font-semibold text-white hover:bg-white/10">Отмена</button>
         </div>
 
         <!-- Набрать текстом (запасной путь, если говорить неудобно) -->
@@ -363,6 +372,23 @@
                 <button id="dialog-lang-b" type="button" class="w-full max-w-[11rem] h-11 rounded-full border border-white/40 text-[15px] text-slate-100 px-3 flex items-center justify-center gap-1.5 min-w-0 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"></button>
             </div>
         </div>
+    </div>
+
+    <!-- Меню сообщения в диалоге (долгое нажатие) -->
+    <div id="dialog-menu-backdrop" class="hidden fixed inset-0 z-[56]"></div>
+    <div id="dialog-menu" role="menu" class="hidden fixed z-[57] w-56 bg-[#2B2D33] border border-white/10 rounded-2xl shadow-2xl py-1.5 select-none">
+        <button type="button" role="menuitem" data-action="copy" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-slate-100 hover:bg-white/[0.06] active:bg-white/10">
+            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            Копировать
+        </button>
+        <button type="button" role="menuitem" data-action="edit" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-slate-100 hover:bg-white/[0.06] active:bg-white/10">
+            <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/></svg>
+            Редактировать
+        </button>
+        <button type="button" role="menuitem" data-action="delete" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-rose-400 hover:bg-white/[0.06] active:bg-white/10">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
+            Удалить
+        </button>
     </div>
 
     <!-- Корневой контейнер, высота которого синхронизируется с visualViewport -->
@@ -820,6 +846,10 @@
             dialogBtn: document.getElementById('dialog-btn'),
             dialogModal: document.getElementById('dialog-modal'),
             dialogLog: document.getElementById('dialog-log'),
+            dialogMenu: document.getElementById('dialog-menu'),
+            dialogMenuBackdrop: document.getElementById('dialog-menu-backdrop'),
+            dialogEditBar: document.getElementById('dialog-edit-bar'),
+            dialogEditCancel: document.getElementById('dialog-edit-cancel'),
             dialogMessages: document.getElementById('dialog-messages'),
             dialogForm: document.getElementById('dialog-form'),
             dialogInput: document.getElementById('dialog-input'),
@@ -3165,7 +3195,8 @@ ${langHint}
                     e.target.blur();
                     return;
                 }
-                if (!els.modeDropdown.classList.contains('hidden')) setModeDropdown(false);
+                if (isDialogMenuOpen()) closeDialogMenu();
+                else if (!els.modeDropdown.classList.contains('hidden')) setModeDropdown(false);
                 else if (!els.langModal.classList.contains('hidden')) closeLanguageModal();
                 else if (!els.historyModal.classList.contains('hidden')) closeHistoryModal();
                 else if (!els.arChipCard.classList.contains('hidden')) closeArChipCard();
@@ -3548,7 +3579,19 @@ ${langHint}
                 dialogUI[side] = { micBtn, langBtn, langText, input: els.dialogInput };
             });
 
+            els.dialogEditCancel.addEventListener('click', () => {
+                endDialogEdit();
+                els.dialogInput.value = '';
+            });
+            els.dialogMenuBackdrop.addEventListener('click', closeDialogMenu);
+            els.dialogMenuBackdrop.addEventListener('contextmenu', (e) => { e.preventDefault(); closeDialogMenu(); });
+            els.dialogLog.addEventListener('scroll', closeDialogMenu, { passive: true });
+            els.dialogMenu.addEventListener('click', (e) => {
+                const action = e.target.closest('[data-action]')?.dataset.action;
+                if (action) handleDialogMenuAction(action);
+            });
             els.dialogTypeSide.addEventListener('click', () => {
+                if (state.dialog.editing) return; // язык правки задан самим сообщением
                 state.dialog.typeSide = state.dialog.typeSide === 'a' ? 'b' : 'a';
                 syncDialogTypeSide();
             });
@@ -3562,6 +3605,12 @@ ${langHint}
                 const text = els.dialogInput.value.trim();
                 if (!text) return;
                 els.dialogInput.value = '';
+                if (state.dialog.editing) {
+                    const msg = state.dialog.editing;
+                    endDialogEdit();
+                    retranslateDialogMessage(msg, text);
+                    return;
+                }
                 sendDialogMessage(state.dialog.typeSide, text);
             });
         }
@@ -3619,6 +3668,145 @@ ${langHint}
             });
         }
 
+        /** Долгое нажатие (палец ~0,5 с) или правый клик открывает меню; прокрутка и движение пальца отменяют */
+        function attachLongPress(node, onLong) {
+            let timer = null;
+            let start = null;
+            let fired = false;
+            const cancel = () => { clearTimeout(timer); timer = null; };
+            node.addEventListener('pointerdown', (e) => {
+                fired = false;
+                if (e.button) return;
+                start = { x: e.clientX, y: e.clientY };
+                cancel();
+                timer = setTimeout(() => {
+                    fired = true;
+                    navigator.vibrate?.(12);
+                    onLong(start.x, start.y);
+                }, 480);
+            });
+            node.addEventListener('pointermove', (e) => {
+                if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
+            });
+            node.addEventListener('pointerup', cancel);
+            node.addEventListener('pointercancel', cancel);
+            node.addEventListener('pointerleave', cancel);
+            // Android присылает contextmenu на долгое нажатие, компьютер — на правый клик
+            node.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                cancel();
+                if (!fired) {
+                    fired = true;
+                    onLong(e.clientX, e.clientY);
+                }
+            });
+            // Отпускание пальца после меню не должно нажимать «озвучить» под ним
+            node.addEventListener('click', (e) => {
+                if (fired) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    fired = false;
+                }
+            }, true);
+        }
+
+        let dialogMenuTarget = null;   // { msg, node }
+
+        function openDialogMenu(msg, node, x, y) {
+            closeDialogMenu();
+            dialogMenuTarget = { msg, node };
+            node.classList.add('scale-[0.98]', 'opacity-80');
+            const menu = els.dialogMenu;
+            const editBtn = menu.querySelector('[data-action="edit"]');
+            editBtn.classList.toggle('hidden', !!state.dialog.listeningSide);
+            menu.classList.remove('hidden');
+            els.dialogMenuBackdrop.classList.remove('hidden');
+            // Меню у пальца, но целиком на экране
+            const w = menu.offsetWidth, h = menu.offsetHeight;
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const left = Math.max(12, Math.min(x - w / 2, vw - w - 12));
+            let top = y + 12;
+            if (top + h > vh - 12) top = Math.max(12, y - h - 12);
+            menu.style.left = `${left}px`;
+            menu.style.top = `${top}px`;
+            menu.querySelector('button:not(.hidden)')?.focus({ preventScroll: true });
+        }
+
+        function closeDialogMenu() {
+            if (!dialogMenuTarget && els.dialogMenu.classList.contains('hidden')) return;
+            dialogMenuTarget?.node.classList.remove('scale-[0.98]', 'opacity-80');
+            dialogMenuTarget = null;
+            els.dialogMenu.classList.add('hidden');
+            els.dialogMenuBackdrop.classList.add('hidden');
+        }
+
+        const isDialogMenuOpen = () => !els.dialogMenu.classList.contains('hidden');
+
+        async function handleDialogMenuAction(action) {
+            const msg = dialogMenuTarget?.msg;
+            closeDialogMenu();
+            if (!msg) return;
+            if (action === 'copy') {
+                // Копируем перевод (если его нет — то, что было сказано)
+                const text = msg.translated || msg.original;
+                const ok = await copyText(text);
+                showToast(ok ? 'Скопировано' : 'Не удалось скопировать', ok ? 'success' : 'error');
+            } else if (action === 'edit') {
+                startDialogEdit(msg);
+            } else if (action === 'delete') {
+                if (state.dialog.editing === msg) endDialogEdit();
+                state.dialog.log = state.dialog.log.filter(m => m !== msg);
+                saveDialogLog();
+                renderDialog();
+                showToast('Сообщение удалено', 'info');
+            }
+        }
+
+        /** Правка: распознанный текст попадает в поле ввода, после отправки перевод обновляется в том же пузыре */
+        function startDialogEdit(msg) {
+            state.dialog.editing = msg;
+            els.dialogEditBar.classList.remove('hidden');
+            els.dialogInput.value = msg.original.startsWith('🎤') ? '' : msg.original;
+            els.dialogInput.placeholder = 'Исправленный текст…';
+            state.dialog.typeSide = msg.from;
+            renderDialog();
+            els.dialogInput.focus();
+            const len = els.dialogInput.value.length;
+            try { els.dialogInput.setSelectionRange(len, len); } catch {}
+        }
+
+        function endDialogEdit() {
+            if (!state.dialog.editing) return;
+            state.dialog.editing = null;
+            els.dialogEditBar.classList.add('hidden');
+            els.dialogInput.placeholder = 'Написать сообщение…';
+            renderDialog();
+        }
+
+        async function retranslateDialogMessage(msg, text) {
+            const from = state.dialog[msg.from];
+            const to = state.dialog[msg.from === 'a' ? 'b' : 'a'];
+            const mode = state.dialog.essence ? 'essence' : 'fast';
+            const signal = dialogAbort?.signal;
+            msg.original = text;
+            msg.translated = '';
+            msg.error = '';
+            msg.pending = true;
+            renderDialog();
+            try {
+                const data = await fetchTranslation(text, from, to, mode, { signal });
+                msg.translated = data.translation;
+            } catch (err) {
+                msg.error = isAbort(err) ? 'Перевод отменён' : describeError(err);
+            } finally {
+                msg.pending = false;
+            }
+            saveDialogLog();
+            if (signal?.aborted || !state.dialog.log.includes(msg)) return;
+            renderDialog();
+            if (msg.translated && state.dialog.autoSpeak) speakText(msg.translated, to);
+        }
+
         function speakerButton(text, lang) {
             const btn = el('button', 'w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all');
             btn.type = 'button';
@@ -3656,6 +3844,8 @@ ${langHint}
                     row.append(bubble, speakerButton(m.translated, toLang));
                 }
                 wrap.appendChild(row);
+                if (!m.pending) attachLongPress(wrap, (x, y) => openDialogMenu(m, wrap, x, y));
+                if (m === state.dialog.editing) wrap.classList.add('opacity-60');
                 frag.appendChild(wrap);
             });
             els.dialogMessages.replaceChildren(frag);
@@ -3808,6 +3998,11 @@ ${langHint}
                 await finishDialogVoice(side);
                 return;
             }
+            // Начали говорить во время правки — правку отменяем, иначе текст правки склеится с речью
+            if (state.dialog.editing) {
+                endDialogEdit();
+                els.dialogInput.value = '';
+            }
             // Если говорил собеседник — сначала отправляем его фразу, потом включаем ваш микрофон
             if (state.dialog.listeningSide) await finishDialogVoice(state.dialog.listeningSide);
             stopSpeaking();
@@ -3874,6 +4069,13 @@ ${langHint}
         }
 
         function closeDialogMode() {
+            closeDialogMenu();
+            if (state.dialog.editing) {
+                state.dialog.editing = null;
+                els.dialogEditBar.classList.add('hidden');
+                els.dialogInput.placeholder = 'Написать сообщение…';
+                els.dialogInput.value = '';
+            }
             dialogAbort?.abort();
             dialogAbort = null;
             stopDialogRecognizer();
