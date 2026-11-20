@@ -977,7 +977,7 @@
         /* =========================================================
          * Язык интерфейса: берётся из языка телефона
          * ========================================================= */
-        // ru, en, vi встроены. Для любого другого языка интерфейс один раз переводится через Gemini
+        // ru и en встроены. Для любого другого языка интерфейс один раз переводится через Gemini
         // и запоминается на устройстве; до этого показывается английский.
         const UI_STRINGS = {
             ru: {
@@ -1105,69 +1105,6 @@
                 'dialog.emptyHint': 'Tap the microphone for your language and speak — pauses are fine. When you are done, tap ■: the translation appears here and is read aloud for the other person.',
                 'dialog.voiceMessage': '🎤 voice message', 'dialog.voiceUnavailable': 'Voice input unavailable — type your message',
                 'dialog.canType': '{error} — you can type instead', 'dialog.editing': '✎ Editing message'
-            },
-            vi: {
-                'app.title': 'Trình dịch AI',
-                'close': 'Đóng', 'send': 'Gửi', 'clear': 'Xóa', 'copy': 'Sao chép', 'copied': 'Đã sao chép',
-                'delete': 'Xóa', 'cancel': 'Hủy', 'retry': 'Thử lại', 'all': 'Tất cả', 'history': 'Lịch sử',
-                'original': 'Bản gốc', 'translation': 'Bản dịch', 'translating': 'Đang dịch…', 'auto': 'Tự động',
-                'detectLang': 'Tự phát hiện', 'detected': 'Đã nhận diện: {lang}', 'recent': 'Gần đây',
-                'input.placeholder': 'Nhập văn bản', 'input.aria': 'Văn bản nguồn', 'speakNow': 'Hãy nói…',
-                'paste': 'Dán', 'paste.title': 'Dán từ bộ nhớ tạm',
-                'variants': 'Cách dịch khác', 'variants.title': 'Các cách dịch khác', 'variants.loading': 'Đang tìm cách dịch khác…',
-                'variants.failed': 'Không tìm được cách dịch khác', 'variants.none': 'Không có cách dịch khác',
-                'variants.pick': 'Chạm để chọn', 'variants.chosen': 'Đã chọn',
-                'fav.add': 'Thêm vào yêu thích', 'fav.remove': 'Bỏ khỏi yêu thích', 'fav.added': 'Đã thêm vào yêu thích', 'fav.removed': 'Đã bỏ khỏi yêu thích',
-                'slow': 'Đọc chậm', 'slow.on': 'Đã bật đọc chậm', 'slow.off': 'Tốc độ đọc bình thường',
-                'listen': 'Nghe bản dịch', 'listenShort': 'Nghe', 'speakShort': 'Đọc',
-                'copyTranslation': 'Sao chép bản dịch', 'copy.done': 'Đã sao chép bản dịch', 'copy.failed': 'Không sao chép được',
-                'sourceLang': 'Ngôn ngữ nguồn', 'targetLang': 'Ngôn ngữ đích', 'swap': 'Đổi chiều ngôn ngữ',
-                'voice': 'Nhập bằng giọng nói', 'camera': 'Máy ảnh', 'dialog': 'Hội thoại',
-                'mode.fast': 'Dịch nhanh', 'mode.essence': 'Truyền đạt ý chính', 'mode.essenceHint': 'Bỏ từ thừa, đi thẳng vào ý',
-                'mode.casual': 'Thân mật', 'mode.formal': 'Trang trọng', 'mode.literal': 'Sát nghĩa',
-                'history.open': 'Lịch sử và yêu thích', 'history.search': 'Tìm trong lịch sử…', 'history.favorites': '★ Yêu thích',
-                'history.emptyRecent': 'Bản dịch của bạn sẽ hiện ở đây', 'history.notFound': 'Không tìm thấy gì',
-                'history.favEmpty': 'Chưa có gì — hãy chạm ☆ dưới bản dịch', 'history.empty': 'Lịch sử trống',
-                'history.cleared': 'Đã xóa lịch sử', 'history.clearedKeptFav': 'Đã xóa lịch sử, giữ lại mục yêu thích',
-                'lang.choose': 'Chọn ngôn ngữ', 'lang.search': 'Tìm ngôn ngữ (ví dụ: Tiếng Nhật, Español, Latinh)…',
-                'lang.yours': 'Ngôn ngữ của bạn', 'lang.partner': 'Ngôn ngữ của người đối diện', 'lang.pick': 'Chọn →',
-                'lang.autoTitle': 'Tự động phát hiện', 'lang.autoSub': 'Bất kỳ ngôn ngữ nào', 'lang.custom': 'Ngôn ngữ tùy chỉnh',
-                'lang.all': 'Tất cả ngôn ngữ', 'lang.use': 'Dùng: “{name}”', 'lang.useSub': 'AI dịch được cả ngôn ngữ hiếm và phương ngữ',
-                'err.translate': 'Không dịch được', 'err.offline': 'Không có kết nối Internet',
-                'err.timeout': 'Máy chủ phản hồi quá lâu', 'err.rateLimit': 'Quá nhiều yêu cầu — vui lòng đợi một chút',
-                'err.unavailable': 'Dịch vụ tạm thời không khả dụng', 'err.noAccess': 'Không có quyền truy cập API',
-                'err.safety': 'Văn bản bị bộ lọc an toàn chặn', 'err.translateShort': 'Không dịch được',
-                'translationCancelled': 'Đã hủy bản dịch',
-                'clipboard.empty': 'Bộ nhớ tạm trống', 'clipboard.useKeyboard': 'Hãy dán văn bản bằng menu bàn phím',
-                'camera.aria': 'Dịch qua ảnh', 'camera.close': 'Đóng máy ảnh', 'camera.torch': 'Đèn pin',
-                'camera.torchUnavailable': 'Không dùng được đèn pin', 'camera.shutter': 'Chụp ảnh và dịch',
-                'camera.fallbackTitle': 'Chọn ảnh hoặc chụp ảnh',
-                'camera.fallbackText': 'Video trực tiếp từ máy ảnh bị chặn trong cửa sổ này, nhưng bạn có thể chụp bằng máy ảnh điện thoại hoặc chọn ảnh — chữ sẽ được thay ngay trên ảnh.',
-                'camera.snap': 'Chụp ảnh', 'camera.fromGallery': 'Từ thư viện', 'camera.scanning': 'Đang thay chữ trên ảnh…',
-                'camera.gallery': 'Thư viện', 'camera.retake': 'Chụp lại', 'camera.apply': 'Sang văn bản',
-                'photo.noText': 'Không tìm thấy chữ trong ảnh', 'photo.done': 'Đã dịch {n} khối chữ', 'photo.error': 'Không nhận diện được ảnh',
-                'image.chooseFile': 'Hãy chọn tệp ảnh',
-                'mic.stop': 'Dừng ghi âm và dịch', 'mic.finishing': 'Đang nhận dạng những từ cuối…',
-                'mic.noAccess': 'Không có quyền dùng micrô trong cửa sổ này', 'mic.unavailable': 'Micrô không khả dụng',
-                'mic.network': 'Không kết nối được dịch vụ nhận dạng giọng nói', 'mic.langUnsupported': 'Ngôn ngữ này chưa hỗ trợ nhập bằng giọng nói',
-                'mic.failed': 'Không nhận dạng được giọng nói', 'mic.unsupported': 'Trình duyệt này không hỗ trợ nhập bằng giọng nói',
-                'rec.timer': '● Đang ghi {time}', 'rec.recognizing': '● Đang nhận dạng…', 'rec.maxReached': 'Đã ghi 5 phút — đang dịch',
-                'rec.hint': 'Hãy nói. Nhấn ■ để dịch, hoặc giữ nút rồi thả ra',
-                'rec.hintDictation': 'Hãy nói — ngắt quãng cũng không sao. Nhấn ■ để dịch',
-                'rec.listeningIn': 'Đang nghe: {lang}. Muốn nói ngôn ngữ khác — hãy chọn thay cho “Tự phát hiện”',
-                'rec.silent': 'Không nghe thấy gì — hãy thử lại', 'rec.notRecognized': 'Không nhận dạng được giọng nói — hãy thử lại',
-                'tts.unavailable': 'Không có giọng đọc cho ngôn ngữ này',
-                'dialog.aria': 'Chế độ hội thoại', 'dialog.close': 'Đóng hội thoại', 'dialog.essence': 'Ý chính',
-                'dialog.essenceTitle': 'Truyền đạt ý chính: bỏ từ thừa và lặp lại',
-                'dialog.essenceOn': 'Hội thoại: truyền đạt ý chính', 'dialog.essenceOff': 'Hội thoại: dịch thông thường',
-                'dialog.autoSpeak': 'Tự động đọc', 'dialog.clearHistory': 'Xóa lịch sử',
-                'dialog.clearConfirm': 'Chạm lần nữa để xóa hội thoại', 'dialog.cleared': 'Đã xóa hội thoại',
-                'dialog.write': 'Nhập tin nhắn…', 'dialog.typeSideTitle': 'Ngôn ngữ bạn đang gõ — chạm để đổi',
-                'dialog.typingIn': 'Đang gõ bằng {lang}. Chạm để đổi', 'dialog.speak': 'Nói',
-                'dialog.speakIn': 'Nói: {lang}', 'dialog.stopSend': 'Dừng và gửi', 'dialog.recognizing': 'Đang nhận dạng…',
-                'dialog.emptyHint': 'Chạm vào micrô ngôn ngữ của bạn và nói — ngắt quãng cũng không sao. Nói xong thì nhấn ■: bản dịch sẽ hiện ở đây và được đọc cho người đối diện.',
-                'dialog.voiceMessage': '🎤 tin nhắn thoại', 'dialog.voiceUnavailable': 'Không thể nhập bằng giọng nói — hãy gõ tin nhắn',
-                'dialog.canType': '{error} — bạn có thể gõ thay thế', 'dialog.editing': '✎ Đang chỉnh sửa tin nhắn'
             }
         };
 
