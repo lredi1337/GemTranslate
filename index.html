@@ -377,7 +377,7 @@
     </div>
 
     <!-- Меню сообщения в диалоге (долгое нажатие) -->
-    <div id="dialog-menu-backdrop" class="hidden fixed inset-0 z-[56]"></div>
+    <div id="dialog-menu-backdrop" class="hidden fixed inset-0 z-[56]" style="touch-action: none;"></div>
     <div id="dialog-menu" role="menu" class="hidden fixed z-[57] w-56 bg-[#2B2D33] border border-white/10 rounded-2xl shadow-2xl py-1.5 select-none">
         <button type="button" role="menuitem" data-action="copy" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-slate-100 hover:bg-white/[0.06] active:bg-white/10">
             <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
@@ -3630,16 +3630,19 @@ ${langHint}
                 endDialogEdit();
                 els.dialogInput.value = '';
             });
-            els.dialogMenuBackdrop.addEventListener('click', () => {
-                if (!dialogMenuProtected()) closeDialogMenu();
+            let backdropTapPointer = null;
+            els.dialogMenuBackdrop.addEventListener('pointerdown', (e) => {
+                backdropTapPointer = e.pointerId; // касание началось на фоне — это новый тап, а не тот палец
             });
-            els.dialogMenuBackdrop.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                if (!dialogMenuProtected()) closeDialogMenu();
+            // Закрываем на click самого фона: так тап «не проваливается» в сообщение под ним
+            els.dialogMenuBackdrop.addEventListener('click', (e) => {
+                const fresh = backdropTapPointer !== null;
+                backdropTapPointer = null;
+                e.stopPropagation();
+                if (fresh && !dialogMenuProtected()) closeDialogMenu();
             });
-            els.dialogLog.addEventListener('scroll', () => {
-                if (!dialogMenuProtected()) closeDialogMenu();
-            }, { passive: true });
+            els.dialogMenuBackdrop.addEventListener('pointercancel', () => { backdropTapPointer = null; });
+            els.dialogMenuBackdrop.addEventListener('contextmenu', (e) => e.preventDefault());
             els.dialogMenu.addEventListener('click', (e) => {
                 const action = e.target.closest('[data-action]')?.dataset.action;
                 if (action) handleDialogMenuAction(action);
@@ -3756,13 +3759,17 @@ ${langHint}
                     onLong(e.clientX, e.clientY, pressed);
                 }
             });
-            // Отпускание пальца после меню не должно нажимать «озвучить» под ним
             node.addEventListener('click', (e) => {
+                // Отпускание пальца после меню не должно нажимать «озвучить» под ним
                 if (fired) {
                     e.stopPropagation();
                     e.preventDefault();
                     fired = false;
+                    return;
                 }
+                // Короткий тап по сообщению (не по кнопке) тоже открывает меню —
+                // на случай, если приложение-хозяин перехватывает долгое нажатие
+                if (!e.target.closest('button')) onLong(e.clientX, e.clientY, false);
             }, true);
         }
 
@@ -3871,6 +3878,7 @@ ${langHint}
             menu.classList.toggle('text-right', t.rtl);
             const editBtn = menu.querySelector('[data-action="edit"]');
             editBtn.classList.toggle('hidden', !!state.dialog.listeningSide);
+            els.dialogLog.style.overflowY = 'hidden';
             menu.classList.remove('hidden');
             els.dialogMenuBackdrop.classList.remove('hidden');
             // Меню у пальца, но целиком на экране
@@ -3888,6 +3896,7 @@ ${langHint}
             if (!dialogMenuTarget && els.dialogMenu.classList.contains('hidden')) return;
             dialogMenuTarget?.node.classList.remove('scale-[0.98]', 'opacity-80');
             dialogMenuTarget = null;
+            els.dialogLog.style.overflowY = '';
             els.dialogMenu.classList.add('hidden');
             els.dialogMenuBackdrop.classList.add('hidden');
         }
