@@ -410,7 +410,7 @@
         <div id="main-container" class="max-w-2xl w-full h-full mx-auto flex flex-col overflow-hidden">
 
             <!-- 1. Верхний лист: ввод текста и перевод -->
-            <section id="main-sheet" class="flex-1 min-h-0 flex flex-col bg-yx-sheet rounded-b-[28px] shadow-2xl overflow-hidden">
+            <section id="main-sheet" class="relative flex-1 min-h-0 flex flex-col bg-yx-sheet rounded-b-[28px] shadow-2xl overflow-hidden">
 
                 <!-- Шапка: левый угол пустой — там системная кнопка закрытия -->
                 <header id="app-bar" class="h-12 shrink-0 flex items-center justify-end gap-1 pl-16 pr-2 sm:pl-4">
@@ -542,7 +542,7 @@
                         <div id="variants-box" class="hidden mt-3 space-y-1.5 select-none"></div>
                     </div>
 
-                    <div class="h-11 shrink-0 flex items-center justify-between gap-1 pt-2">
+                    <div id="output-actions" class="sticky bottom-0 z-10 h-12 shrink-0 flex items-center justify-between gap-1 pt-2 pb-1 -mx-5 px-5 bg-yx-sheet">
                         <button id="variants-btn" type="button" disabled title="Другие варианты перевода" data-i18n-title="variants.title" class="h-9 px-2.5 -ml-1.5 rounded-full flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none">
                             <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
@@ -572,6 +572,12 @@
                     </div>
                 </div>
                 </div>
+
+                <!-- Перевод ниже края экрана (длинный текст) — одна кнопка, чтобы к нему перейти -->
+                <button id="jump-to-translation" type="button" class="hidden absolute left-1/2 -translate-x-1/2 bottom-4 z-20 h-10 pl-3.5 pr-4 rounded-full bg-yx-accent text-white text-[14px] font-semibold shadow-xl items-center gap-1.5 active:scale-95 transition-all">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                    <span data-i18n="toTranslation">К переводу</span>
+                </button>
             </section>
 
             <!-- 2. Нижняя панель: языки и главные действия -->
@@ -826,6 +832,8 @@
             sourceText: document.getElementById('source-text'),
             targetText: document.getElementById('target-text'),
             sheetScroll: document.getElementById('sheet-scroll'),
+            jumpToTranslation: document.getElementById('jump-to-translation'),
+            outputSection: document.getElementById('output-section'),
             didYouMean: document.getElementById('did-you-mean'),
             voiceRetry: document.getElementById('voice-retry'),
             voiceRetryText: document.getElementById('voice-retry-text'),
@@ -1037,7 +1045,7 @@
             ru: {
                 'app.title': 'AI Переводчик',
                 'close': 'Закрыть', 'send': 'Отправить', 'clear': 'Очистить', 'copy': 'Копировать', 'copied': 'Скопировано',
-                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'undo': 'Отменить', 'history.deleted': 'Запись удалена', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
+                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'toTranslation': 'К переводу', 'undo': 'Отменить', 'history.deleted': 'Запись удалена', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
                 'original': 'Оригинал', 'translation': 'Перевод', 'translating': 'Перевод...', 'auto': 'Авто',
                 'detectLang': 'Определить язык', 'detected': 'Определен: {lang}', 'didYouMean': 'Возможно, вы имели в виду:', 'recent': 'Недавние',
                 'input.placeholder': 'Введите текст', 'input.aria': 'Исходный текст', 'speakNow': 'Говорите…',
@@ -1100,7 +1108,7 @@
             en: {
                 'app.title': 'AI Translator',
                 'close': 'Close', 'send': 'Send', 'clear': 'Clear', 'copy': 'Copy', 'copied': 'Copied',
-                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'undo': 'Undo', 'history.deleted': 'Entry deleted', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
+                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'toTranslation': 'To translation', 'undo': 'Undo', 'history.deleted': 'Entry deleted', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
                 'original': 'Original', 'translation': 'Translation', 'translating': 'Translating…', 'auto': 'Auto',
                 'detectLang': 'Detect language', 'detected': 'Detected: {lang}', 'didYouMean': 'Did you mean:', 'recent': 'Recent',
                 'input.placeholder': 'Enter text', 'input.aria': 'Source text', 'speakNow': 'Speak…',
@@ -2338,6 +2346,17 @@ ${sourceRule}
                 }
             }
             box.scrollTop = keepScroll;
+            updateJumpToTranslation();
+        }
+
+        /** Показать «↓ К переводу», если перевод есть, но его начало ниже видимой части полотна */
+        function updateJumpToTranslation() {
+            const box = els.sheetScroll;
+            const hasTranslation = !!state.lastTranslation && els.mainSheet.classList.contains('has-text');
+            const startBelow = els.outputSection.getBoundingClientRect().top > box.getBoundingClientRect().bottom - 40;
+            const show = hasTranslation && startBelow && micMode === 'idle';
+            els.jumpToTranslation.classList.toggle('hidden', !show);
+            els.jumpToTranslation.classList.toggle('flex', show);
         }
 
         function setLoading(isLoading) {
@@ -3894,6 +3913,12 @@ ${langHint}
             });
             // Клавиатура, поворот экрана, варианты перевода — размер полотна изменился, подбираем шрифт заново
             if (window.ResizeObserver) new ResizeObserver(scheduleFitText).observe(els.sheetScroll);
+            els.sheetScroll.addEventListener('scroll', updateJumpToTranslation, { passive: true });
+            els.jumpToTranslation.addEventListener('click', () => {
+                const box = els.sheetScroll;
+                const delta = els.outputSection.getBoundingClientRect().top - box.getBoundingClientRect().top;
+                box.scrollTo({ top: Math.max(0, box.scrollTop + delta - 12), behavior: 'smooth' });
+            });
             els.copyBtn.addEventListener('click', handleCopyTranslation);
 
             // Очистка истории переводов
