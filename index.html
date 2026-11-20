@@ -3480,6 +3480,12 @@ ${langHint}
         const dialogUI = { a: null, b: null };
         const isDialogOpen = () => !els.dialogModal.classList.contains('hidden');
 
+        /** Название языка на нём самом: вьетнамец под своим микрофоном видит «Tiếng Việt», а не «Вьетнамский» */
+        function nativeLangName(name) {
+            const obj = findLanguageObj(name);
+            return obj ? obj.native : String(name);
+        }
+
         /** Короткий код языка для переключателя «на чьём языке пишу» */
         function shortLangCode(name) {
             const obj = findLanguageObj(name);
@@ -3605,7 +3611,9 @@ ${langHint}
                 // Во время записи вместо названия языка — таймер; язык менять нельзя, чтобы не сбить распознавание
                 ui.langText.textContent = mode === 'listening' && dialogRecStartedAt
                     ? `● ${formatDuration(Date.now() - dialogRecStartedAt)}`
-                    : mode === 'finishing' ? 'Распознаю…' : state.dialog[side];
+                    : mode === 'finishing' ? '…' : nativeLangName(state.dialog[side]);
+                ui.langBtn.title = state.dialog[side];
+                if (mode === 'idle') ui.micBtn.setAttribute('aria-label', `Говорить: ${state.dialog[side]}`);
                 ui.langBtn.classList.toggle('text-rose-300', mode === 'listening');
                 ui.langBtn.disabled = busy;
             });
