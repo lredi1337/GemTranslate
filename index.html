@@ -110,6 +110,15 @@
         #camera-stage.zoomable { touch-action: none; }
         #captured-wrapper { will-change: transform; }
 
+        /* Поле ввода диалога растёт с текстом; при правке — заметно выше */
+        #dialog-input { max-height: 30dvh; }
+        #dialog-modal.editing #dialog-input { max-height: 45dvh; }
+        /* Правим текст или печатаем — микрофоны прячем, чтобы поле и лента поместились над клавиатурой */
+        #dialog-modal.editing #dialog-mics,
+        body.keyboard-open #dialog-mics { display: none; }
+        #dialog-modal.editing #dialog-form,
+        body.keyboard-open #dialog-form { padding-bottom: 0.75rem; }
+
         /* Долгое нажатие на сообщение — наше меню, а не системное выделение текста */
         #dialog-messages { -webkit-touch-callout: none; }
 
@@ -344,16 +353,16 @@
         </div>
 
         <!-- Набрать текстом (запасной путь, если говорить неудобно) -->
-        <form id="dialog-form" class="shrink-0 flex items-center gap-2 px-4 pt-2">
+        <form id="dialog-form" class="shrink-0 flex items-end gap-2 px-4 pt-2">
             <button id="dialog-type-side" type="button" title="На чьём языке вы пишете — нажмите, чтобы сменить" class="h-11 min-w-[3rem] px-2.5 rounded-2xl text-xs font-bold uppercase shrink-0 transition-colors"></button>
-            <input id="dialog-input" type="text" autocomplete="off" enterkeyhint="send" placeholder="Написать сообщение…" class="flex-1 min-w-0 h-11 bg-white/[0.06] rounded-2xl px-4 text-[15px] text-white placeholder-[#8A8D95] focus:outline-none focus:ring-1 focus:ring-yx-accent select-text">
+            <textarea id="dialog-input" rows="1" autocomplete="off" enterkeyhint="send" placeholder="Написать сообщение…" class="flex-1 min-w-0 min-h-[2.75rem] bg-white/[0.06] rounded-2xl px-4 py-[11px] text-[15px] leading-[22px] text-white placeholder-[#8A8D95] resize-none overflow-y-auto inner-scroll focus:outline-none focus:ring-1 focus:ring-yx-accent select-text"></textarea>
             <button type="submit" aria-label="Отправить" class="w-11 h-11 shrink-0 rounded-full bg-white/[0.08] hover:bg-white/[0.12] text-white flex items-center justify-center active:scale-90 transition-all">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m0 0l-6-6m6 6l-6 6"/></svg>
             </button>
         </form>
 
         <!-- Микрофоны собеседников с выбором языка -->
-        <div class="shrink-0 grid grid-cols-2 gap-4 px-5 pt-4 pb-4">
+        <div id="dialog-mics" class="shrink-0 grid grid-cols-2 gap-4 px-5 pt-4 pb-4">
             <div class="flex flex-col items-center gap-3">
                 <button id="dialog-mic-a" type="button" aria-label="Говорить" class="w-[72px] h-[72px] rounded-full flex items-center justify-center active:scale-95 transition-all"></button>
                 <button id="dialog-lang-a" type="button" class="w-full max-w-[11rem] h-11 rounded-full border border-white/40 text-[15px] text-slate-100 px-3 flex items-center justify-center gap-1.5 min-w-0 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"></button>
@@ -3215,7 +3224,7 @@ ${langHint}
             // Escape закрывает верхний открытый слой
             document.addEventListener('keydown', (e) => {
                 if (e.key !== 'Escape') return;
-                if (e.target.matches?.('#dialog-modal input, #lang-search-input, #history-search') && e.target.value) {
+                if (e.target.matches?.('#dialog-modal input, #dialog-modal textarea, #lang-search-input, #history-search') && e.target.value) {
                     e.target.blur();
                     return;
                 }
@@ -3541,6 +3550,14 @@ ${langHint}
             return obj ? obj.native : String(name);
         }
 
+        /** Высота поля ввода диалога — по тексту (до предела из CSS, дальше прокрутка) */
+        function autosizeDialogInput() {
+            const ta = els.dialogInput;
+            ta.style.height = 'auto';
+            ta.style.height = `${ta.scrollHeight + 2}px`;
+            if (document.activeElement === ta) ta.scrollTop = ta.scrollHeight;
+        }
+
         /** Короткий код языка для переключателя «на чьём языке пишу» */
         function shortLangCode(name) {
             const obj = findLanguageObj(name);
@@ -3609,7 +3626,7 @@ ${langHint}
 
             els.dialogEditCancel.addEventListener('click', () => {
                 endDialogEdit();
-                els.dialogInput.value = '';
+                els.dialogInput.value = ''; autosizeDialogInput();
             });
             let backdropTapPointer = null;
             els.dialogMenuBackdrop.addEventListener('pointerdown', (e) => {
@@ -3633,6 +3650,13 @@ ${langHint}
                 state.dialog.typeSide = state.dialog.typeSide === 'a' ? 'b' : 'a';
                 syncDialogTypeSide();
             });
+            els.dialogInput.addEventListener('input', autosizeDialogInput);
+            els.dialogInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+                    e.preventDefault();
+                    els.dialogForm.requestSubmit();
+                }
+            });
             els.dialogForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 // Во время записи «отправить» просто завершает её — фраза уйдёт один раз
@@ -3642,7 +3666,7 @@ ${langHint}
                 }
                 const text = els.dialogInput.value.trim();
                 if (!text) return;
-                els.dialogInput.value = '';
+                els.dialogInput.value = ''; autosizeDialogInput();
                 if (state.dialog.editing) {
                     const msg = state.dialog.editing;
                     endDialogEdit();
@@ -3890,17 +3914,19 @@ ${langHint}
         /** Правка: распознанный текст попадает в поле ввода, после отправки перевод обновляется в том же пузыре */
         function startDialogEdit(msg) {
             state.dialog.editing = msg;
+            els.dialogModal.classList.add('editing');
             const t = dialogUiStrings(state.dialog[msg.from]);
             els.dialogEditLabel.textContent = `✎ ${t.editing}`;
             els.dialogEditCancel.textContent = t.cancel;
             els.dialogEditBar.dir = t.rtl ? 'rtl' : 'ltr';
             els.dialogEditBar.classList.remove('hidden');
-            els.dialogInput.value = msg.original.startsWith('🎤') ? '' : msg.original;
+            els.dialogInput.value = msg.original.startsWith('🎤') ? '' : msg.original; autosizeDialogInput();
             els.dialogInput.dir = 'auto';
             els.dialogInput.placeholder = t.placeholder;
             state.dialog.typeSide = msg.from;
             renderDialog();
             els.dialogInput.focus();
+            autosizeDialogInput();
             const len = els.dialogInput.value.length;
             try { els.dialogInput.setSelectionRange(len, len); } catch {}
         }
@@ -3908,6 +3934,7 @@ ${langHint}
         function endDialogEdit() {
             if (!state.dialog.editing) return;
             state.dialog.editing = null;
+            els.dialogModal.classList.remove('editing');
             els.dialogEditBar.classList.add('hidden');
             els.dialogInput.placeholder = 'Написать сообщение…';
             renderDialog();
@@ -4063,7 +4090,7 @@ ${langHint}
             }
             const input = dialogUI[side].input;
             const base = input.value.trim();
-            input.value = '';
+            input.value = ''; autosizeDialogInput();
             sendDialogAudio(side, audio, base); // не ждём: собеседник может сразу отвечать
         }
 
@@ -4081,7 +4108,7 @@ ${langHint}
                     sendDialogMessage(side, joinSpeech(baseText, data.transcript));
                 } catch (err) {
                     if (isAbort(err)) return;
-                    dialogUI[side].input.value = baseText;
+                    dialogUI[side].input.value = baseText; autosizeDialogInput();
                     showToast(describeError(err, 'Не удалось распознать речь'), 'error');
                 }
                 return;
@@ -4128,7 +4155,7 @@ ${langHint}
             // Начали говорить во время правки — правку отменяем, иначе текст правки склеится с речью
             if (state.dialog.editing) {
                 endDialogEdit();
-                els.dialogInput.value = '';
+                els.dialogInput.value = ''; autosizeDialogInput();
             }
             // Если говорил собеседник — сначала отправляем его фразу, потом включаем ваш микрофон
             if (state.dialog.listeningSide) await finishDialogVoice(state.dialog.listeningSide);
@@ -4162,7 +4189,7 @@ ${langHint}
             const baseText = input.value.trim();
             const dictation = createDictation({
                 getLang: () => speechLangFor(state.dialog[side]),
-                onText: (spoken) => { input.value = joinSpeech(baseText, spoken); },
+                onText: (spoken) => { input.value = joinSpeech(baseText, spoken); autosizeDialogInput(); },
                 onStop: ({ cancelled, error }) => {
                     if (dialogRecognizer === dictation) dialogRecognizer = null;
                     dialogVoiceEngine = null;
@@ -4172,7 +4199,7 @@ ${langHint}
                     if (error) showToast(`${speechErrorMessage(error)} — можно написать текст`, 'error');
                     const text = input.value.trim();
                     if (!cancelled && text) {
-                        input.value = '';
+                        input.value = ''; autosizeDialogInput();
                         sendDialogMessage(side, text);
                     }
                 }
@@ -4199,9 +4226,10 @@ ${langHint}
             closeDialogMenu();
             if (state.dialog.editing) {
                 state.dialog.editing = null;
+                els.dialogModal.classList.remove('editing');
                 els.dialogEditBar.classList.add('hidden');
                 els.dialogInput.placeholder = 'Написать сообщение…';
-                els.dialogInput.value = '';
+                els.dialogInput.value = ''; autosizeDialogInput();
             }
             dialogAbort?.abort();
             dialogAbort = null;
