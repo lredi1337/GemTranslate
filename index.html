@@ -478,6 +478,15 @@
                         class="w-full min-h-[2.25rem] overflow-hidden bg-transparent text-[28px] font-normal text-white placeholder-[#8A8D95] resize-none focus:outline-none leading-tight select-text"
                     ></textarea>
 
+                    <!-- Запись не удалось обработать (нет сети, сбой) — она сохранена, её можно отправить ещё раз -->
+                    <div id="voice-retry" class="hidden mt-2 mb-3 items-center gap-1.5 rounded-2xl bg-rose-500/10 border border-rose-400/25 pl-3.5 pr-1 py-1 text-[14px] leading-snug text-rose-100">
+                        <span id="voice-retry-text" class="flex-1 min-w-0 py-1.5"></span>
+                        <button id="voice-retry-btn" type="button" data-i18n="retry" class="h-9 px-3.5 shrink-0 rounded-xl bg-white/10 hover:bg-white/15 text-white text-[14px] font-semibold active:scale-95 transition-all disabled:opacity-40">Повторить</button>
+                        <button id="voice-retry-dismiss" type="button" aria-label="Закрыть" data-i18n-aria-label="close" class="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center text-rose-200 hover:bg-white/10">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+
                     <!-- «Возможно, вы имели в виду…» — нажатие подставляет исправленный текст и переводит заново -->
                     <button id="did-you-mean" type="button" class="hidden self-start mt-1 text-left text-[15px] leading-snug text-slate-300 active:opacity-70"></button>
 
@@ -817,6 +826,10 @@
             targetText: document.getElementById('target-text'),
             sheetScroll: document.getElementById('sheet-scroll'),
             didYouMean: document.getElementById('did-you-mean'),
+            voiceRetry: document.getElementById('voice-retry'),
+            voiceRetryText: document.getElementById('voice-retry-text'),
+            voiceRetryBtn: document.getElementById('voice-retry-btn'),
+            voiceRetryDismiss: document.getElementById('voice-retry-dismiss'),
             srcSpeakBtn: document.getElementById('src-speak-btn'),
             srcCopyBtn: document.getElementById('src-copy-btn'),
             targetLangHint: document.getElementById('target-lang-hint'),
@@ -1022,7 +1035,7 @@
             ru: {
                 'app.title': 'AI Переводчик',
                 'close': 'Закрыть', 'send': 'Отправить', 'clear': 'Очистить', 'copy': 'Копировать', 'copied': 'Скопировано',
-                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'all': 'Все', 'history': 'История',
+                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
                 'original': 'Оригинал', 'translation': 'Перевод', 'translating': 'Перевод...', 'auto': 'Авто',
                 'detectLang': 'Определить язык', 'detected': 'Определен: {lang}', 'didYouMean': 'Возможно, вы имели в виду:', 'recent': 'Недавние',
                 'input.placeholder': 'Введите текст', 'input.aria': 'Исходный текст', 'speakNow': 'Говорите…',
@@ -1085,7 +1098,7 @@
             en: {
                 'app.title': 'AI Translator',
                 'close': 'Close', 'send': 'Send', 'clear': 'Clear', 'copy': 'Copy', 'copied': 'Copied',
-                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'all': 'All', 'history': 'History',
+                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
                 'original': 'Original', 'translation': 'Translation', 'translating': 'Translating…', 'auto': 'Auto',
                 'detectLang': 'Detect language', 'detected': 'Detected: {lang}', 'didYouMean': 'Did you mean:', 'recent': 'Recent',
                 'input.placeholder': 'Enter text', 'input.aria': 'Source text', 'speakNow': 'Speak…',
@@ -3132,6 +3145,7 @@ ${langHint}
                 // Как в Google: каждая запись — новая фраза. Прошлый текст и перевод убираем
                 // (они уже сохранены в истории), записываем и переводим только сказанное сейчас
                 mainVoiceBase = '';
+                hideVoiceRetry();
                 setSourceText('');
                 resetTranslationOutput();
                 // Убираем клавиатуру: она мешает и может перехватить микрофон
@@ -3195,6 +3209,31 @@ ${langHint}
             setMicUI('idle');
         }
 
+        // Запись, которую не удалось обработать: храним, пока её не отправят ещё раз или не уберут
+        let pendingVoice = null;
+
+        function showVoiceRetry(message) {
+            els.voiceRetryText.textContent = t('voice.failed', { error: message }) + (navigator.onLine ? '' : t('voice.willRetry'));
+            els.voiceRetryBtn.disabled = false;
+            els.voiceRetry.classList.remove('hidden');
+            els.voiceRetry.classList.add('flex');
+            scheduleFitText();
+        }
+
+        function hideVoiceRetry() {
+            pendingVoice = null;
+            els.voiceRetry.classList.add('hidden');
+            els.voiceRetry.classList.remove('flex');
+        }
+
+        function retryPendingVoice() {
+            if (!pendingVoice || pendingVoice.busy) return;
+            pendingVoice.busy = true;
+            els.voiceRetryText.textContent = t('voice.retrying');
+            els.voiceRetryBtn.disabled = true;
+            processMainAudio(pendingVoice.audio);
+        }
+
         async function processMainAudio(audio) {
             const done = () => {
                 mainVoiceEngine = null;
@@ -3214,6 +3253,7 @@ ${langHint}
                 // Если в поле уже был текст — только расшифровка, а перевод потом целиком
                 const data = await transcribeAudio(audio.base64, { sourceLang, targetLang, mode, translate: !base, signal, suggest: true });
                 if (!textReq.isCurrent(id)) return;
+                hideVoiceRetry(); // запись дошла — сохранённая копия больше не нужна
                 if (!data.transcript) {
                     showToast(t('rec.notRecognized'), 'info');
                     return;
@@ -3229,8 +3269,13 @@ ${langHint}
                 done();
                 translateText(); // перевод уже в кэше — покажется мгновенно и попадёт в историю
             } catch (err) {
-                if (!textReq.isCurrent(id) || isAbort(err)) return;
-                showToast(describeError(err, t('mic.failed')), 'error');
+                if (!textReq.isCurrent(id) || isAbort(err)) {
+                    if (pendingVoice) pendingVoice.busy = false;
+                    return;
+                }
+                // Сказанное не теряем: сохраняем запись и даём отправить её ещё раз
+                pendingVoice = { audio, busy: false };
+                showVoiceRetry(describeError(err, t('mic.failed')));
             } finally {
                 if (textReq.isCurrent(id)) {
                     setLoading(false);
@@ -3843,6 +3888,10 @@ ${langHint}
             });
 
             window.addEventListener('offline', () => showToast(t('err.offline'), 'error'));
+            els.voiceRetryBtn.addEventListener('click', retryPendingVoice);
+            els.voiceRetryDismiss.addEventListener('click', hideVoiceRetry);
+            // Интернет вернулся — сохранённая запись уходит сама
+            window.addEventListener('online', () => { if (pendingVoice) retryPendingVoice(); });
         }
 
         /* =========================================================
