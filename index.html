@@ -1059,7 +1059,7 @@
                 'mic.stop': 'Остановить запись и перевести', 'mic.finishing': 'Распознаю последние слова…',
                 'mic.noAccess': 'Нет доступа к микрофону в этом окне', 'mic.unavailable': 'Микрофон недоступен',
                 'mic.network': 'Нет связи с сервисом распознавания речи', 'mic.langUnsupported': 'Этот язык не поддерживается для голосового ввода',
-                'mic.failed': 'Не удалось распознать речь', 'mic.unsupported': 'Голосовой ввод не поддерживается в этом браузере',
+                'mic.failed': 'Не удалось распознать речь', 'mic.starting': 'Подключаю микрофон…', 'mic.permission': 'Разрешите доступ к микрофону и нажмите ещё раз', 'mic.noAudio': 'Микрофон не передаёт звук — нажмите ещё раз', 'mic.unsupported': 'Голосовой ввод не поддерживается в этом браузере',
                 'rec.timer': '● Запись {time}', 'rec.recognizing': '● Распознаю…', 'rec.maxReached': 'Запись идёт уже 5 минут — перевожу',
                 'rec.hint': 'Говорите. ■ — перевести, или держите кнопку и отпустите',
                 'rec.hintDictation': 'Говорите, паузы не страшны. Нажмите ■, чтобы перевести',
@@ -1122,7 +1122,7 @@
                 'mic.stop': 'Stop recording and translate', 'mic.finishing': 'Recognizing the last words…',
                 'mic.noAccess': 'No microphone access in this window', 'mic.unavailable': 'Microphone unavailable',
                 'mic.network': 'Cannot reach the speech recognition service', 'mic.langUnsupported': 'This language is not supported for voice input',
-                'mic.failed': 'Could not recognize speech', 'mic.unsupported': 'Voice input is not supported in this browser',
+                'mic.failed': 'Could not recognize speech', 'mic.starting': 'Connecting the microphone…', 'mic.permission': 'Allow microphone access and tap again', 'mic.noAudio': 'The microphone is not sending audio — tap again', 'mic.unsupported': 'Voice input is not supported in this browser',
                 'rec.timer': '● Recording {time}', 'rec.recognizing': '● Recognizing…', 'rec.maxReached': 'Recording has reached 5 minutes — translating',
                 'rec.hint': 'Speak. Tap ■ to translate, or hold the button and release',
                 'rec.hintDictation': 'Speak — pauses are fine. Tap ■ to translate',
@@ -2609,7 +2609,7 @@ ${sourceRule}
         const stopIcon = (cls) => `<svg class="${cls}" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>`;
         const spinnerIcon = (cls) => `<svg class="${cls} animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.3" stroke-width="3"/><path d="M21 12a9 9 0 00-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`;
 
-        const micLabel = (mode) => t({ idle: 'voice', listening: 'mic.stop', finishing: 'mic.finishing' }[mode]);
+        const micLabel = (mode) => t({ idle: 'voice', starting: 'mic.starting', listening: 'mic.stop', finishing: 'mic.finishing' }[mode]);
 
         // Таймер записи: и на главном экране, и в диалоге
         let mainRecStartedAt = 0;
@@ -2720,21 +2720,69 @@ ${sourceRule}
             reader.readAsDataURL(blob);
         });
 
+        // Один звуковой тракт на всё приложение. На сенсорном экране браузер разрешает запустить звук только
+        // в момент «настоящего» нажатия (отпускание пальца), поэтому прогреваем его на первом же касании экрана
+        // и дальше используем повторно, а не создаём заново на каждую запись.
+        let sharedAudioCtx = null;
+        let micReady = false;          // в этом сеансе микрофон уже реально отдавал звук
+        let fastDenials = 0;           // подряд отказы без окна разрешения — значит, запись звука запрещена чатом
+        const MIC_PERMISSION_TIMEOUT_MS = 25000;
+        const MIC_STALL_MS = 1500;     // нет звука столько — пробуем «разбудить» тракт, потом сдаёмся
+
+        function getAudioCtx() {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return null;
+            if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+                try { sharedAudioCtx = new AC(); } catch { sharedAudioCtx = null; }
+            }
+            return sharedAudioCtx;
+        }
+
+        function warmAudioCtx() {
+            const ctx = getAudioCtx();
+            if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+        }
+
+        /** Удержание микрофона разрешаем, только когда разрешение уже есть и звук точно пойдёт сразу */
+        const canHoldMic = () => micReady && sharedAudioCtx?.state === 'running';
+
+        /** Почему не удалось начать запись → что сказать человеку и не пора ли перейти на запасной способ */
+        function explainRecorderFailure(res, elapsedMs) {
+            if (res.reason === 'NotAllowedError' || res.reason === 'SecurityError') {
+                // Отказ мгновенно, без окна разрешения, дважды подряд — запись звука запрещена самим чатом
+                fastDenials = elapsedMs < 400 ? fastDenials + 1 : 0;
+                if (fastDenials >= 2) return 'fallback';
+                showToast(t('mic.permission'), 'error');
+                return 'stop';
+            }
+            if (res.reason === 'PermissionTimeout') {
+                showToast(t('mic.permission'), 'error');
+                return 'stop';
+            }
+            if (res.reason === 'NotFoundError' || res.reason === 'NotReadableError' || res.reason === 'OverconstrainedError') {
+                showToast(t('mic.unavailable'), 'error');
+                return 'stop';
+            }
+            return 'fallback'; // запись звука в этом браузере не поддерживается
+        }
+
         /** Диктофон: пишет звук с микрофона, пока не остановят, паузы ему не важны */
-        function createAudioRecorder({ onLevel, onMaxDuration }) {
+        function createAudioRecorder({ onLevel, onMaxDuration, onLive, onStall }) {
             let active = false;
             let ctx = null, stream = null, source = null, node = null;
             let chunks = [], length = 0, peak = 0, startedAt = 0, maxTimer = null;
+            let gotAudio = false, stallTimer = null;
 
             function cleanup() {
                 clearTimeout(maxTimer);
+                clearTimeout(stallTimer);
                 try {
                     if (node) node.onaudioprocess = null;
                     node?.disconnect();
                     source?.disconnect();
                 } catch {}
                 stream?.getTracks().forEach(t => t.stop());
-                try { ctx?.close(); } catch {}
+                // Общий звуковой тракт не закрываем — он нужен для следующих записей
                 ctx = stream = source = node = null;
             }
 
@@ -2743,21 +2791,35 @@ ${sourceRule}
                 /** Вызывать прямо из нажатия: аудиоконтекст создаётся синхронно, иначе браузер не даст его запустить */
                 async start() {
                     if (active) return { ok: true };
-                    const AC = window.AudioContext || window.webkitAudioContext;
-                    if (!AC || !navigator.mediaDevices?.getUserMedia) return { ok: false, reason: 'unsupported' };
-                    try { ctx = new AC(); } catch { return { ok: false, reason: 'unsupported' }; }
-                    const resumed = ctx.resume ? ctx.resume().catch(() => {}) : null;
+                    if (!navigator.mediaDevices?.getUserMedia) return { ok: false, reason: 'unsupported' };
+                    ctx = getAudioCtx();
+                    if (!ctx) return { ok: false, reason: 'unsupported' };
+                    const resumed = ctx.state !== 'running' ? ctx.resume().catch(() => {}) : null;
                     active = true;
+                    gotAudio = false;
                     chunks = []; length = 0; peak = 0;
+                    // Окно разрешения могло закрыться само, и запрос тогда «висит» — не ждём вечно
+                    const request = navigator.mediaDevices.getUserMedia({
+                        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                    });
+                    let permTimer = null;
+                    const timeout = new Promise((_, reject) => {
+                        permTimer = setTimeout(() => {
+                            const e = new Error('permission timeout');
+                            e.name = 'PermissionTimeout';
+                            reject(e);
+                        }, MIC_PERMISSION_TIMEOUT_MS);
+                    });
                     try {
-                        stream = await navigator.mediaDevices.getUserMedia({
-                            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-                        });
+                        stream = await Promise.race([request, timeout]);
                     } catch (err) {
+                        request.then(st => st.getTracks().forEach(tr => tr.stop())).catch(() => {});
                         const reason = active ? (err?.name || 'error') : 'cancelled';
                         active = false;
                         cleanup();
                         return { ok: false, reason };
+                    } finally {
+                        clearTimeout(permTimer);
                     }
                     if (!active || !ctx) { // остановили, пока ждали разрешения
                         stream?.getTracks().forEach(t => t.stop());
@@ -2776,6 +2838,14 @@ ${sourceRule}
                     }
                     node.onaudioprocess = (e) => {
                         if (!active) return;
+                        if (!gotAudio) {
+                            // Звук реально пошёл — только теперь кнопка становится красной «пишу»
+                            gotAudio = true;
+                            micReady = true;
+                            fastDenials = 0;
+                            clearTimeout(stallTimer);
+                            onLive?.();
+                        }
                         const data = e.inputBuffer.getChannelData(0);
                         chunks.push(new Float32Array(data));
                         length += data.length;
@@ -2793,6 +2863,12 @@ ${sourceRule}
                     node.connect(ctx.destination); // без этого браузер не прокачивает звук через обработчик (выход — тишина)
                     startedAt = Date.now();
                     maxTimer = setTimeout(() => onMaxDuration?.(), MAX_RECORD_MS);
+                    // Звук не пошёл: ещё раз будим тракт, а если и это не помогло — честно сообщаем
+                    stallTimer = setTimeout(() => {
+                        if (!active || gotAudio) return;
+                        ctx?.resume?.().catch(() => {});
+                        stallTimer = setTimeout(() => { if (active && !gotAudio) onStall?.(); }, MIC_STALL_MS * 2);
+                    }, MIC_STALL_MS);
                     return { ok: true };
                 },
                 /** Остановить и получить запись: WAV 16 кГц моно в base64, либо { silent: true } */
@@ -2825,13 +2901,16 @@ ${sourceRule}
          *  • тап — запись началась, повторный тап — закончить;
          *  • зажал — запись идёт, пока держишь; отпустил — фраза уходит на перевод.
          */
-        function bindMicButton(btn, { isIdle, isBusy, start, finish }) {
+        function bindMicButton(btn, { isIdle, isBusy, start, finish, canHold = () => true }) {
             let pressAt = 0;
             let startedByPress = false;
             let ignoreClickUntil = 0;
 
             btn.addEventListener('pointerdown', (e) => {
                 if (e.button || isBusy() || !isIdle()) return;
+                // Пока нет разрешения или звук ещё не «прогрет», запись начнётся по отпусканию пальца (click):
+                // иначе окно разрешения закроется, как только палец уйдёт с экрана
+                if (!canHold()) return;
                 pressAt = Date.now();
                 startedByPress = true;
                 ignoreClickUntil = Infinity; // click после этого касания обработаем здесь сами
@@ -2903,13 +2982,15 @@ ${langHint}
         function setMicUI(mode) {
             micMode = mode;
             const on = mode !== 'idle';
-            els.micBtn.classList.toggle('bg-rose-600', on);
-            els.micBtn.classList.toggle('bg-yx-accent', !on);
+            // Красный — только когда звук реально пишется; пока подключаемся — синий с крутилкой
+            els.micBtn.classList.toggle('bg-rose-600', on && mode !== 'starting');
+            els.micBtn.classList.toggle('bg-yx-accent', !on || mode === 'starting');
+            els.micBtn.classList.toggle('animate-pulse', mode === 'starting');
             els.micBtn.classList.toggle('mic-listening', mode === 'listening' && mainVoiceEngine !== 'recorder');
             els.micBtn.classList.toggle('opacity-80', mode === 'finishing');
             if (mode !== 'listening') setMicLevel(els.micBtn, null);
             els.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-7 h-7')
-                : mode === 'finishing' ? spinnerIcon('w-8 h-8')
+                : (mode === 'finishing' || mode === 'starting') ? spinnerIcon('w-8 h-8')
                 : micIcon('w-8 h-8');
             els.micBtn.setAttribute('aria-pressed', String(on));
             els.micBtn.setAttribute('aria-label', micLabel(mode));
@@ -2919,6 +3000,9 @@ ${langHint}
             els.recIndicator.classList.toggle('hidden', !on);
             els.detectedBadge.classList.toggle('hidden', on);
             if (mode === 'finishing') els.recIndicator.textContent = t('rec.recognizing');
+            if (mode === 'starting') els.recIndicator.textContent = t('mic.starting');
+            els.recIndicator.classList.toggle('text-rose-400', mode !== 'starting');
+            els.recIndicator.classList.toggle('text-yx-accent', mode === 'starting');
             if (mode === 'listening') startRecTicker();
             updateClearBtnVisibility(); // во время записи — крупное «Говорите…» вместо «Недавних»
         }
@@ -2947,6 +3031,16 @@ ${langHint}
                 onMaxDuration: () => {
                     showToast(t('rec.maxReached'), 'info');
                     finishMainVoice();
+                },
+                onLive: () => {
+                    if (micMode !== 'starting') return;
+                    mainRecStartedAt = Date.now();
+                    setMicUI('listening');
+                    showToast(t('rec.hint'), 'info');
+                },
+                onStall: () => {
+                    cancelMainVoice();
+                    showToast(t('mic.noAudio'), 'error');
                 }
             });
 
@@ -2954,7 +3048,8 @@ ${langHint}
                 isIdle: () => micMode === 'idle',
                 isBusy: () => micMode === 'finishing', // уже останавливаемся — новая запись не начинается
                 start: () => startMainVoice(),
-                finish: () => finishMainVoice()
+                finish: () => finishMainVoice(),
+                canHold: canHoldMic
             });
 
             async function startMainVoice() {
@@ -2974,14 +3069,16 @@ ${langHint}
 
                 if (useAudioCapture) {
                     mainVoiceEngine = 'recorder';
-                    setMicUI('listening');
+                    setMicUI('starting');   // красной кнопка станет, только когда пойдёт звук (onLive)
+                    const askedAt = Date.now();
                     const res = await mainRecorder.start();
-                    if (res.ok) {
-                        showToast(t('rec.hint'), 'info');
+                    if (res.ok || res.reason === 'cancelled') return;
+                    if (explainRecorderFailure(res, Date.now() - askedAt) === 'stop') {
+                        mainVoiceEngine = null;
+                        setMicUI('idle');
                         return;
                     }
-                    if (res.reason === 'cancelled') return;
-                    // Чат не дал записывать звук напрямую — дальше работаем через системное распознавание
+                    // Чат не даёт записывать звук напрямую — дальше работаем через системное распознавание
                     useAudioCapture = false;
                 }
 
@@ -3003,6 +3100,11 @@ ${langHint}
 
         /** Второе нажатие (или 5 минут записи): остановить и перевести */
         async function finishMainVoice() {
+            // Звук ещё не пошёл — записывать нечего, просто отменяем
+            if (micMode === 'starting') {
+                cancelMainVoice();
+                return;
+            }
             if (micMode !== 'listening') return;
             setMicUI('finishing'); // кнопка меняется сразу — видно, что нажатие принято
             if (mainVoiceEngine === 'dictation') {
@@ -4024,7 +4126,8 @@ ${langHint}
                     isIdle: () => state.dialog.listeningSide !== side,
                     isBusy: () => !!state.dialog.finishingSide,
                     start: () => toggleDialogListening(side),
-                    finish: () => finishDialogVoice(side)
+                    finish: () => finishDialogVoice(side),
+                    canHold: canHoldMic
                 });
                 langBtn.addEventListener('click', () => openLanguageModal(side === 'a' ? 'dialogA' : 'dialogB'));
                 // Поле ввода общее: голос дописывается к набранному тексту той стороны, что говорит
@@ -4106,7 +4209,8 @@ ${langHint}
             els.dialogEssenceBtn.setAttribute('aria-pressed', String(state.dialog.essence));
         }
 
-        const dialogMicLabel = (mode) => t({ idle: 'dialog.speak', listening: 'dialog.stopSend', finishing: 'dialog.recognizing' }[mode]);
+        const dialogMicLabel = (mode) => t({ idle: 'dialog.speak', starting: 'mic.starting', listening: 'dialog.stopSend', finishing: 'dialog.recognizing' }[mode]);
+        let dialogMicLive = false;   // звук в диалоге реально пошёл
 
         function renderDialogMicState() {
             const busy = !!(state.dialog.listeningSide || state.dialog.finishingSide);
@@ -4114,24 +4218,28 @@ ${langHint}
                 const ui = dialogUI[side];
                 if (!ui) return;
                 const mode = state.dialog.finishingSide === side ? 'finishing'
-                    : state.dialog.listeningSide === side ? 'listening' : 'idle';
+                    : state.dialog.listeningSide === side
+                        ? (dialogVoiceEngine === 'recorder' && !dialogMicLive ? 'starting' : 'listening')
+                        : 'idle';
                 const sideClasses = DIALOG_SIDE_STYLE[side].mic.split(' ');
-                ui.micBtn.classList.toggle('bg-rose-600', mode !== 'idle');
-                ui.micBtn.classList.toggle('text-white', mode !== 'idle');
-                sideClasses.forEach(c => ui.micBtn.classList.toggle(c, mode === 'idle'));
+                const red = mode === 'listening' || mode === 'finishing';
+                ui.micBtn.classList.toggle('bg-rose-600', red);
+                ui.micBtn.classList.toggle('text-white', red);
+                sideClasses.forEach(c => ui.micBtn.classList.toggle(c, !red));
+                ui.micBtn.classList.toggle('animate-pulse', mode === 'starting');
                 ui.micBtn.classList.toggle('mic-listening', mode === 'listening' && dialogVoiceEngine !== 'recorder');
                 ui.micBtn.classList.toggle('opacity-80', mode === 'finishing');
                 if (mode !== 'listening') setMicLevel(ui.micBtn, null);
                 if (ui.micMode !== mode) {
                     ui.micMode = mode;
                     ui.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-7 h-7')
-                        : mode === 'finishing' ? spinnerIcon('w-8 h-8') : MIC_SVG;
+                        : (mode === 'finishing' || mode === 'starting') ? spinnerIcon('w-8 h-8') : MIC_SVG;
                     ui.micBtn.setAttribute('aria-label', dialogMicLabel(mode));
                 }
                 // Во время записи вместо названия языка — таймер; язык менять нельзя, чтобы не сбить распознавание
                 ui.langText.textContent = mode === 'listening' && dialogRecStartedAt
                     ? `● ${formatDuration(Date.now() - dialogRecStartedAt)}`
-                    : mode === 'finishing' ? '…' : nativeLangName(state.dialog[side]);
+                    : (mode === 'finishing' || mode === 'starting') ? '…' : nativeLangName(state.dialog[side]);
                 ui.langBtn.title = langDisplayName(state.dialog[side]);
                 if (mode === 'idle') ui.micBtn.setAttribute('aria-label', t('dialog.speakIn', { lang: nativeLangName(state.dialog[side]) }));
                 ui.langBtn.classList.toggle('text-rose-300', mode === 'listening');
@@ -4457,11 +4565,21 @@ ${langHint}
                 dialogRecorder = createAudioRecorder({
                     onLevel: (level) => {
                         const side = state.dialog.listeningSide;
-                        if (side && !state.dialog.finishingSide) setMicLevel(dialogUI[side]?.micBtn, level);
+                        if (side && dialogMicLive && !state.dialog.finishingSide) setMicLevel(dialogUI[side]?.micBtn, level);
                     },
                     onMaxDuration: () => {
                         const side = state.dialog.listeningSide;
                         if (side) finishDialogVoice(side);
+                    },
+                    onLive: () => {
+                        dialogMicLive = true;
+                        dialogRecStartedAt = Date.now();
+                        renderDialogMicState();
+                        startRecTicker();
+                    },
+                    onStall: () => {
+                        stopDialogRecognizer();
+                        showToast(t('mic.noAudio'), 'error');
                     }
                 });
             }
@@ -4482,6 +4600,11 @@ ${langHint}
         /** Закончить запись стороны и отправить фразу (перевод догружается в пузыре «…») */
         async function finishDialogVoice(side) {
             if (state.dialog.listeningSide !== side || state.dialog.finishingSide) return;
+            // Звук ещё не пошёл — записывать нечего, просто отменяем
+            if (dialogVoiceEngine === 'recorder' && !dialogMicLive) {
+                stopDialogRecognizer();
+                return;
+            }
             state.dialog.finishingSide = side;
             renderDialogMicState();
             if (dialogVoiceEngine === 'dictation') {
@@ -4575,10 +4698,17 @@ ${langHint}
             dialogRecStartedAt = Date.now();
             if (useAudioCapture) {
                 dialogVoiceEngine = 'recorder';
+                dialogMicLive = false;          // красной кнопка станет, только когда пойдёт звук (onLive)
                 renderDialogMicState();
-                startRecTicker();
+                const askedAt = Date.now();
                 const res = await getDialogRecorder().start();
                 if (res.ok || res.reason === 'cancelled') return;
+                if (explainRecorderFailure(res, Date.now() - askedAt) === 'stop') {
+                    dialogVoiceEngine = null;
+                    state.dialog.listeningSide = null;
+                    renderDialogMicState();
+                    return;
+                }
                 useAudioCapture = false; // запись звука недоступна — системное распознавание
             }
             startDialogDictation(side);
@@ -4882,6 +5012,9 @@ ${langHint}
         function init() {
             applyStaticI18n();
             document.addEventListener('click', unlockAudio, { capture: true });
+            // Звуковой тракт для записи прогреваем на каждом «настоящем» нажатии, пока он не заработал
+            document.addEventListener('click', () => { if (sharedAudioCtx?.state !== 'running') warmAudioCtx(); }, { capture: true });
+            document.addEventListener('touchend', () => { if (sharedAudioCtx?.state !== 'running') warmAudioCtx(); }, { capture: true, passive: true });
             document.addEventListener('touchend', unlockAudio, { capture: true, passive: true });
             restoreSettings();
             syncLanguageUI();
