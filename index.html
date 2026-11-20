@@ -348,7 +348,7 @@
 
         <!-- Режим редактирования сообщения -->
         <div id="dialog-edit-bar" class="hidden shrink-0 mx-4 mt-2 pl-3.5 pr-1.5 h-10 rounded-xl bg-yx-accent/[0.12] border border-yx-accent/20 text-[13px] text-sky-200 flex items-center justify-between gap-2">
-            <span class="truncate">✎ Редактирование сообщения</span>
+            <span id="dialog-edit-label" class="truncate">✎ Редактирование сообщения</span>
             <button id="dialog-edit-cancel" type="button" class="h-8 px-3 shrink-0 rounded-lg text-[13px] font-semibold text-white hover:bg-white/10">Отмена</button>
         </div>
 
@@ -379,15 +379,15 @@
     <div id="dialog-menu" role="menu" class="hidden fixed z-[57] w-56 bg-[#2B2D33] border border-white/10 rounded-2xl shadow-2xl py-1.5 select-none">
         <button type="button" role="menuitem" data-action="copy" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-slate-100 hover:bg-white/[0.06] active:bg-white/10">
             <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-            Копировать
+            <span data-label="copy">Копировать</span>
         </button>
         <button type="button" role="menuitem" data-action="edit" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-slate-100 hover:bg-white/[0.06] active:bg-white/10">
             <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125"/></svg>
-            Редактировать
+            <span data-label="edit">Редактировать</span>
         </button>
         <button type="button" role="menuitem" data-action="delete" class="w-full h-12 px-4 flex items-center gap-3 text-[15px] text-rose-400 hover:bg-white/[0.06] active:bg-white/10">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/></svg>
-            Удалить
+            <span data-label="delete">Удалить</span>
         </button>
     </div>
 
@@ -613,7 +613,8 @@
             recent: 'yx_ai_translator_recent_langs',
             prefs: 'yx_ai_translator_prefs',
             dialog: 'yx_ai_translator_dialog',
-            dialogLog: 'yx_ai_translator_dialog_log'
+            dialogLog: 'yx_ai_translator_dialog_log',
+            uiI18n: 'yx_ai_translator_ui_i18n'
         };
 
         const IS_TOUCH = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
@@ -850,6 +851,7 @@
             dialogMenuBackdrop: document.getElementById('dialog-menu-backdrop'),
             dialogEditBar: document.getElementById('dialog-edit-bar'),
             dialogEditCancel: document.getElementById('dialog-edit-cancel'),
+            dialogEditLabel: document.getElementById('dialog-edit-label'),
             dialogMessages: document.getElementById('dialog-messages'),
             dialogForm: document.getElementById('dialog-form'),
             dialogInput: document.getElementById('dialog-input'),
@@ -3710,6 +3712,82 @@ ${langHint}
             }, true);
         }
 
+        /* ---------- Подписи меню на языке того, чьё сообщение ---------- */
+        // Вьетнамец, зажавший своё сообщение, видит меню по-вьетнамски
+        const DIALOG_UI_KEYS = ['copy', 'edit', 'delete', 'editing', 'cancel', 'placeholder', 'copied', 'deleted'];
+        const DIALOG_UI_STRINGS = {
+            ru: ['Копировать', 'Редактировать', 'Удалить', 'Редактирование сообщения', 'Отмена', 'Исправленный текст…', 'Скопировано', 'Сообщение удалено'],
+            en: ['Copy', 'Edit', 'Delete', 'Editing message', 'Cancel', 'Corrected text…', 'Copied', 'Message deleted'],
+            vi: ['Sao chép', 'Chỉnh sửa', 'Xóa', 'Đang chỉnh sửa tin nhắn', 'Hủy', 'Văn bản đã sửa…', 'Đã sao chép', 'Đã xóa tin nhắn'],
+            'zh-CN': ['复制', '编辑', '删除', '正在编辑消息', '取消', '修改后的文本…', '已复制', '消息已删除'],
+            'zh-TW': ['複製', '編輯', '刪除', '正在編輯訊息', '取消', '修改後的文字…', '已複製', '訊息已刪除'],
+            th: ['คัดลอก', 'แก้ไข', 'ลบ', 'กำลังแก้ไขข้อความ', 'ยกเลิก', 'ข้อความที่แก้ไข…', 'คัดลอกแล้ว', 'ลบข้อความแล้ว'],
+            ja: ['コピー', '編集', '削除', 'メッセージを編集中', 'キャンセル', '修正したテキスト…', 'コピーしました', 'メッセージを削除しました'],
+            ko: ['복사', '편집', '삭제', '메시지 편집 중', '취소', '수정한 텍스트…', '복사됨', '메시지가 삭제됨'],
+            es: ['Copiar', 'Editar', 'Eliminar', 'Editando mensaje', 'Cancelar', 'Texto corregido…', 'Copiado', 'Mensaje eliminado'],
+            fr: ['Copier', 'Modifier', 'Supprimer', 'Modification du message', 'Annuler', 'Texte corrigé…', 'Copié', 'Message supprimé'],
+            de: ['Kopieren', 'Bearbeiten', 'Löschen', 'Nachricht bearbeiten', 'Abbrechen', 'Korrigierter Text…', 'Kopiert', 'Nachricht gelöscht'],
+            it: ['Copia', 'Modifica', 'Elimina', 'Modifica del messaggio', 'Annulla', 'Testo corretto…', 'Copiato', 'Messaggio eliminato'],
+            pt: ['Copiar', 'Editar', 'Excluir', 'Editando mensagem', 'Cancelar', 'Texto corrigido…', 'Copiado', 'Mensagem excluída'],
+            tr: ['Kopyala', 'Düzenle', 'Sil', 'Mesaj düzenleniyor', 'İptal', 'Düzeltilmiş metin…', 'Kopyalandı', 'Mesaj silindi'],
+            id: ['Salin', 'Edit', 'Hapus', 'Mengedit pesan', 'Batal', 'Teks yang diperbaiki…', 'Disalin', 'Pesan dihapus'],
+            ar: ['نسخ', 'تعديل', 'حذف', 'جارٍ تعديل الرسالة', 'إلغاء', 'النص المصحح…', 'تم النسخ', 'تم حذف الرسالة'],
+            hi: ['कॉपी करें', 'संपादित करें', 'हटाएँ', 'संदेश संपादित हो रहा है', 'रद्द करें', 'सुधारा गया पाठ…', 'कॉपी हो गया', 'संदेश हटाया गया'],
+            uk: ['Копіювати', 'Редагувати', 'Видалити', 'Редагування повідомлення', 'Скасувати', 'Виправлений текст…', 'Скопійовано', 'Повідомлення видалено']
+        };
+        const RTL_LANG_CODES = ['ar', 'he', 'fa', 'ur', 'yi', 'ps'];
+        const uiI18nLoading = new Set();
+
+        const toUiObject = (arr) => Object.fromEntries(DIALOG_UI_KEYS.map((k, i) => [k, arr[i]]));
+
+        /** Подписи для языка: встроенные → сохранённые ранее → английские (а перевод подгружается в фоне) */
+        function dialogUiStrings(langName) {
+            const obj = findLanguageObj(langName);
+            const tag = obj?.bcp47 || '';
+            const base = tag.split('-')[0];
+            const builtIn = DIALOG_UI_STRINGS[tag] || DIALOG_UI_STRINGS[base];
+            const rtl = RTL_LANG_CODES.includes(base);
+            if (builtIn) return { ...toUiObject(builtIn), rtl };
+            const cached = storage.get(STORAGE_KEYS.uiI18n, {})?.[langName];
+            if (cached && DIALOG_UI_KEYS.every(k => typeof cached[k] === 'string' && cached[k])) return { ...cached, rtl };
+            loadDialogUiStrings(langName);
+            return { ...toUiObject(DIALOG_UI_STRINGS.en), rtl: false };
+        }
+
+        /** Один раз переводим подписи меню на редкий язык через Gemini и запоминаем на телефоне */
+        async function loadDialogUiStrings(langName) {
+            if (!langName || uiI18nLoading.has(langName)) return;
+            const obj = findLanguageObj(langName);
+            const tag = obj?.bcp47 || '';
+            if (DIALOG_UI_STRINGS[tag] || DIALOG_UI_STRINGS[tag.split('-')[0]]) return;
+            if (storage.get(STORAGE_KEYS.uiI18n, {})?.[langName]) return;
+            uiI18nLoading.add(langName);
+            try {
+                const source = toUiObject(DIALOG_UI_STRINGS.en);
+                const payload = {
+                    contents: [{ role: 'user', parts: [{ text: JSON.stringify(source) }] }],
+                    systemInstruction: { parts: [{ text: `Translate the values of this JSON (short labels of a chat app context menu) into ${langName}${obj ? ` (${obj.native})` : ''}. Keep the keys. Use short, natural wording a native speaker expects in a phone app. Keep the ellipsis "…" where present.` }] },
+                    generationConfig: {
+                        responseMimeType: 'application/json',
+                        responseSchema: {
+                            type: 'OBJECT',
+                            properties: Object.fromEntries(DIALOG_UI_KEYS.map(k => [k, { type: 'STRING' }])),
+                            required: DIALOG_UI_KEYS
+                        }
+                    }
+                };
+                const json = extractResponseJson(await callGemini(MODEL_NAME, payload, { retries: 1 }));
+                if (!DIALOG_UI_KEYS.every(k => typeof json?.[k] === 'string' && json[k].trim())) return;
+                const all = storage.get(STORAGE_KEYS.uiI18n, {}) || {};
+                all[langName] = Object.fromEntries(DIALOG_UI_KEYS.map(k => [k, json[k].trim().slice(0, 60)]));
+                storage.set(STORAGE_KEYS.uiI18n, all);
+            } catch {
+                // Нет сети — останутся английские подписи, попробуем в следующий раз
+            } finally {
+                uiI18nLoading.delete(langName);
+            }
+        }
+
         let dialogMenuTarget = null;   // { msg, node }
 
         function openDialogMenu(msg, node, x, y) {
@@ -3717,6 +3795,10 @@ ${langHint}
             dialogMenuTarget = { msg, node };
             node.classList.add('scale-[0.98]', 'opacity-80');
             const menu = els.dialogMenu;
+            const t = dialogUiStrings(state.dialog[msg.from]);
+            menu.querySelectorAll('[data-label]').forEach(span => { span.textContent = t[span.dataset.label]; });
+            menu.dir = t.rtl ? 'rtl' : 'ltr';
+            menu.classList.toggle('text-right', t.rtl);
             const editBtn = menu.querySelector('[data-action="edit"]');
             editBtn.classList.toggle('hidden', !!state.dialog.listeningSide);
             menu.classList.remove('hidden');
@@ -3746,11 +3828,12 @@ ${langHint}
             const msg = dialogMenuTarget?.msg;
             closeDialogMenu();
             if (!msg) return;
+            const t = dialogUiStrings(state.dialog[msg.from]);
             if (action === 'copy') {
                 // Копируем перевод (если его нет — то, что было сказано)
                 const text = msg.translated || msg.original;
                 const ok = await copyText(text);
-                showToast(ok ? 'Скопировано' : 'Не удалось скопировать', ok ? 'success' : 'error');
+                showToast(ok ? t.copied : 'Не удалось скопировать', ok ? 'success' : 'error');
             } else if (action === 'edit') {
                 startDialogEdit(msg);
             } else if (action === 'delete') {
@@ -3758,16 +3841,21 @@ ${langHint}
                 state.dialog.log = state.dialog.log.filter(m => m !== msg);
                 saveDialogLog();
                 renderDialog();
-                showToast('Сообщение удалено', 'info');
+                showToast(t.deleted, 'info');
             }
         }
 
         /** Правка: распознанный текст попадает в поле ввода, после отправки перевод обновляется в том же пузыре */
         function startDialogEdit(msg) {
             state.dialog.editing = msg;
+            const t = dialogUiStrings(state.dialog[msg.from]);
+            els.dialogEditLabel.textContent = `✎ ${t.editing}`;
+            els.dialogEditCancel.textContent = t.cancel;
+            els.dialogEditBar.dir = t.rtl ? 'rtl' : 'ltr';
             els.dialogEditBar.classList.remove('hidden');
             els.dialogInput.value = msg.original.startsWith('🎤') ? '' : msg.original;
-            els.dialogInput.placeholder = 'Исправленный текст…';
+            els.dialogInput.dir = 'auto';
+            els.dialogInput.placeholder = t.placeholder;
             state.dialog.typeSide = msg.from;
             renderDialog();
             els.dialogInput.focus();
@@ -3849,6 +3937,8 @@ ${langHint}
                 frag.appendChild(wrap);
             });
             els.dialogMessages.replaceChildren(frag);
+            loadDialogUiStrings(state.dialog.a);
+            loadDialogUiStrings(state.dialog.b);
             els.dialogClearBtn.parentElement.classList.toggle('hidden', !msgs.length);
             els.dialogLog.scrollTop = els.dialogLog.scrollHeight;
             syncDialogTypeSide();
