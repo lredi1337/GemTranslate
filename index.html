@@ -115,10 +115,22 @@
         /* Поле ввода диалога растёт с текстом; при правке — заметно выше */
         #dialog-input { max-height: 30dvh; }
         #dialog-modal.editing #dialog-input { max-height: 45dvh; }
-        /* Правим текст или печатаем — микрофоны прячем, чтобы поле и лента поместились над клавиатурой */
-        #dialog-modal.editing #dialog-mics,
-        body.keyboard-open #dialog-mics,
-        body.typing #dialog-mics { display: none; }
+        /* Правим текст или печатаем — микрофоны прячем, чтобы поле и лента поместились над клавиатурой.
+           Если внизу зарезервировано место под клавиатуру (kb-reserve), микрофоны лежат там — под клавиатурой */
+        #dialog-modal.editing:not(.kb-reserve) #dialog-mics,
+        body.keyboard-open #dialog-modal:not(.kb-reserve) #dialog-mics,
+        body.typing #dialog-modal:not(.kb-reserve) #dialog-mics { display: none; }
+
+        /* Окно Gemini не сообщает о клавиатуре и при её появлении просто сдвигает всё приложение вверх,
+           пряча шапку и сообщения. Поэтому сами поднимаем строку ввода над местом клавиатуры —
+           сдвигать становится нечего, а микрофоны остаются в зарезервированной зоне под клавиатурой */
+        #dialog-modal.kb-reserve { padding-bottom: var(--kb-reserve, 0px) !important; }
+        #dialog-modal.kb-reserve #dialog-mics {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            height: var(--kb-reserve, 0px);
+            align-content: end;
+            padding-bottom: max(1rem, env(safe-area-inset-bottom));
+        }
         body.typing #dialog-form { padding-bottom: 0.75rem; }
         #dialog-modal.editing #dialog-form,
         body.keyboard-open #dialog-form { padding-bottom: 0.75rem; }
@@ -1685,6 +1697,44 @@
         /** Курсор в поле на сенсорном экране = клавиатура открыта: прячем то, что ей мешает */
         function syncTypingState() {
             document.body.classList.toggle('typing', IS_TOUCH && isTypingField(document.activeElement));
+            updateDialogKeyboardReserve();
+        }
+
+        /**
+         * Пока пишем в диалоге, оставляем внизу место под клавиатуру.
+         * Высоту берём у браузера, если он её сообщает; если окно молчит (так ведёт себя чат Gemini) —
+         * примерно 47% высоты экрана; если окно уже само ужалось под клавиатуру — место не нужно.
+         */
+        let maxSeenHeight = 0;
+        let maxSeenWidth = 0;
+
+        function updateDialogKeyboardReserve() {
+            const modal = els.dialogModal;
+            const typingInDialog = IS_TOUCH && isDialogOpen() && document.activeElement === els.dialogInput;
+            let reserve = 0;
+            // Самая большая высота окна, что мы видели (при повороте экрана — заново): не доверяем только screen.height
+            if (window.innerWidth !== maxSeenWidth) {
+                maxSeenWidth = window.innerWidth;
+                maxSeenHeight = 0;
+            }
+            maxSeenHeight = Math.max(maxSeenHeight, window.innerHeight);
+            if (typingInDialog) {
+                const vv = window.visualViewport;
+                const inner = window.innerHeight;
+                const screenH = Math.max(window.screen?.height || 0, maxSeenHeight);
+                const hiddenBelow = vv ? inner - (vv.height + vv.offsetTop) : 0;
+                if (hiddenBelow > 120) {
+                    reserve = Math.round(hiddenBelow);                                   // браузер сообщил, где клавиатура
+                } else if (inner > screenH * 0.75) {
+                    reserve = Math.round(Math.min(screenH * 0.47, inner * 0.6));         // окно молчит — примерная высота
+                }
+            }
+            const changed = modal.classList.contains('kb-reserve') !== reserve > 0
+                || modal.style.getPropertyValue('--kb-reserve') !== `${reserve}px`;
+            modal.classList.toggle('kb-reserve', reserve > 0);
+            modal.style.setProperty('--kb-reserve', `${reserve}px`);
+            // Последние сообщения должны остаться видны над строкой ввода
+            if (changed && typingInDialog) requestAnimationFrame(() => { els.dialogLog.scrollTop = els.dialogLog.scrollHeight; });
         }
 
         function setupViewportAdapter() {
@@ -1733,7 +1783,9 @@
                 const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
                 if (h - lastHeight > 150 && isTypingField(document.activeElement)) document.activeElement.blur();
                 lastHeight = h;
+                updateDialogKeyboardReserve();
             };
+            window.visualViewport?.addEventListener('scroll', () => updateDialogKeyboardReserve());
             window.visualViewport?.addEventListener('resize', onHeightChange);
             window.addEventListener('resize', onHeightChange);
 
@@ -4596,6 +4648,7 @@ ${langHint}
                 }
             });
             els.dialogModal.classList.add('hidden');
+            updateDialogKeyboardReserve();
         }
 
         /* =========================================================
@@ -4836,6 +4889,7 @@ ${langHint}
             initEvents();
             initExtraEvents();
             if (uiNeedsTranslation) translateUiStrings();
+            updateDialogKeyboardReserve(); // запоминаем высоту окна без клавиатуры
         }
 
         if (document.readyState === 'loading') {
