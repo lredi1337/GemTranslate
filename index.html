@@ -154,6 +154,7 @@
     <div id="toast" role="status" aria-live="polite" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] transform -translate-y-6 opacity-0 transition-all duration-200 pointer-events-none flex items-center gap-2 bg-[#2B2D31] border border-[#3A3D42] text-white px-3.5 py-2 rounded-full shadow-2xl text-xs font-medium whitespace-nowrap max-w-[92vw]">
         <span id="toast-icon" class="w-2 h-2 rounded-full bg-blue-400 inline-block shrink-0"></span>
         <span id="toast-message" class="truncate"></span>
+        <button id="toast-action" type="button" class="hidden pointer-events-auto shrink-0 -my-1 -mr-1.5 ml-1 px-3 py-1.5 rounded-full text-xs font-semibold text-yx-accent hover:bg-white/10 active:scale-95 transition-all"></button>
     </div>
 
     <!-- Модальное окно живой камеры и фотоперевода с AR-наложением -->
@@ -875,6 +876,7 @@
             toast: document.getElementById('toast'),
             toastMessage: document.getElementById('toast-message'),
             toastIcon: document.getElementById('toast-icon'),
+            toastAction: document.getElementById('toast-action'),
             cameraStage: document.getElementById('camera-stage'),
             camTorchBtn: document.getElementById('cam-torch-btn'),
             arChipCard: document.getElementById('ar-chip-card'),
@@ -1035,7 +1037,7 @@
             ru: {
                 'app.title': 'AI Переводчик',
                 'close': 'Закрыть', 'send': 'Отправить', 'clear': 'Очистить', 'copy': 'Копировать', 'copied': 'Скопировано',
-                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
+                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'undo': 'Отменить', 'history.deleted': 'Запись удалена', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
                 'original': 'Оригинал', 'translation': 'Перевод', 'translating': 'Перевод...', 'auto': 'Авто',
                 'detectLang': 'Определить язык', 'detected': 'Определен: {lang}', 'didYouMean': 'Возможно, вы имели в виду:', 'recent': 'Недавние',
                 'input.placeholder': 'Введите текст', 'input.aria': 'Исходный текст', 'speakNow': 'Говорите…',
@@ -1098,7 +1100,7 @@
             en: {
                 'app.title': 'AI Translator',
                 'close': 'Close', 'send': 'Send', 'clear': 'Clear', 'copy': 'Copy', 'copied': 'Copied',
-                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
+                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'undo': 'Undo', 'history.deleted': 'Entry deleted', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
                 'original': 'Original', 'translation': 'Translation', 'translating': 'Translating…', 'auto': 'Auto',
                 'detectLang': 'Detect language', 'detected': 'Detected: {lang}', 'didYouMean': 'Did you mean:', 'recent': 'Recent',
                 'input.placeholder': 'Enter text', 'input.aria': 'Source text', 'speakNow': 'Speak…',
@@ -1818,14 +1820,31 @@
          * ========================================================= */
         const TOAST_COLORS = { error: 'bg-rose-500', success: 'bg-emerald-400', info: 'bg-blue-400' };
 
-        function showToast(msg, type = 'info') {
+        let toastActionHandler = null;
+
+        /** Уведомление; action — кнопка в нём (например, «Отменить»), тогда оно висит дольше */
+        function showToast(msg, type = 'info', { action } = {}) {
             clearTimeout(toastTimer);
             els.toastMessage.textContent = msg;
             els.toastIcon.className = `w-2 h-2 rounded-full inline-block shrink-0 ${TOAST_COLORS[type] || TOAST_COLORS.info}`;
+            toastActionHandler = action?.onClick || null;
+            els.toastAction.textContent = action?.label || '';
+            els.toastAction.classList.toggle('hidden', !action);
             els.toast.classList.remove('-translate-y-6', 'opacity-0');
-            toastTimer = setTimeout(() => {
-                els.toast.classList.add('-translate-y-6', 'opacity-0');
-            }, type === 'error' ? 3200 : 2400);
+            toastTimer = setTimeout(hideToast, action ? 5000 : type === 'error' ? 3200 : 2400);
+        }
+
+        function hideToast() {
+            clearTimeout(toastTimer);
+            toastActionHandler = null;
+            els.toastAction.classList.add('hidden');
+            els.toast.classList.add('-translate-y-6', 'opacity-0');
+        }
+
+        /** Вернуть историю, как была до удаления */
+        function restoreHistorySnapshot(snapshot) {
+            state.history = snapshot;
+            persistHistory();
         }
 
         function copyTextFallback(text) {
@@ -3878,7 +3897,14 @@ ${langHint}
             els.copyBtn.addEventListener('click', handleCopyTranslation);
 
             // Очистка истории переводов
+            els.toastAction.addEventListener('click', () => {
+                const handler = toastActionHandler;
+                hideToast();
+                handler?.();
+            });
+
             els.clearHistoryBtn.addEventListener('click', () => {
+                const snapshot = state.history.slice();
                 const favCount = state.history.filter(h => h.fav).length;
                 state.history = state.history.filter(h => h.fav);
                 if (state.history.length) persistHistory();
@@ -3887,7 +3913,9 @@ ${langHint}
                     renderHistoryStrip();
                     syncFavButton();
                 }
-                showToast(favCount ? t('history.clearedKeptFav') : t('history.cleared'), 'info');
+                // Стёрли случайно — 5 секунд можно всё вернуть
+                showToast(favCount ? t('history.clearedKeptFav') : t('history.cleared'), 'info',
+                    { action: { label: t('undo'), onClick: () => restoreHistorySnapshot(snapshot) } });
             });
 
             window.addEventListener('offline', () => showToast(t('err.offline'), 'error'));
@@ -4161,8 +4189,10 @@ ${langHint}
                         persistHistory();
                     });
                 const del = iconButton('×', 'text-yx-muted hover:text-rose-400 text-lg', t('delete'), () => {
+                    const snapshot = state.history.slice();
                     state.history = state.history.filter(h => h !== item);
                     persistHistory();
+                    showToast(t('history.deleted'), 'info', { action: { label: t('undo'), onClick: () => restoreHistorySnapshot(snapshot) } });
                 });
 
                 row.append(main, star, del);
