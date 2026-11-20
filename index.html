@@ -2256,14 +2256,208 @@ ${sourceRule}
             return phoneLanguageName();
         }
 
+        /* ---------- Запись звука напрямую: без системного распознавания и без его «пиликанья» ---------- */
+        const RECORD_SAMPLE_RATE = 16000;         // речи достаточно, а файл в 3 раза меньше
+        const MAX_RECORD_MS = 5 * 60 * 1000;      // страховка от забытой записи
+        let useAudioCapture = true;               // false — запись звука недоступна, работаем через системное распознавание
+
+        function encodeWav16(samples, sampleRate) {
+            const buffer = new ArrayBuffer(44 + samples.length * 2);
+            const view = new DataView(buffer);
+            const writeStr = (o, str) => { for (let i = 0; i < str.length; i++) view.setUint8(o + i, str.charCodeAt(i)); };
+            writeStr(0, 'RIFF');
+            view.setUint32(4, 36 + samples.length * 2, true);
+            writeStr(8, 'WAVE');
+            writeStr(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeStr(36, 'data');
+            view.setUint32(40, samples.length * 2, true);
+            for (let i = 0; i < samples.length; i++) {
+                const v = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7FFF, true);
+            }
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        /** Склеивает куски записи и понижает частоту усреднением (заодно сглаживает шум) */
+        function downsample(chunks, totalLength, fromRate, toRate) {
+            const input = new Float32Array(totalLength);
+            let offset = 0;
+            for (const c of chunks) { input.set(c, offset); offset += c.length; }
+            if (fromRate <= toRate) return { samples: input, rate: fromRate };
+            const ratio = fromRate / toRate;
+            const out = new Float32Array(Math.floor(input.length / ratio));
+            for (let i = 0; i < out.length; i++) {
+                const start = Math.floor(i * ratio);
+                const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+                let sum = 0;
+                for (let j = start; j < end; j++) sum += input[j];
+                out[i] = end > start ? sum / (end - start) : 0;
+            }
+            return { samples: out, rate: toRate };
+        }
+
+        const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(',')[1]);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+        });
+
+        /** Диктофон: пишет звук с микрофона, пока не остановят, паузы ему не важны */
+        function createAudioRecorder({ onLevel, onMaxDuration }) {
+            let active = false;
+            let ctx = null, stream = null, source = null, node = null;
+            let chunks = [], length = 0, peak = 0, startedAt = 0, maxTimer = null;
+
+            function cleanup() {
+                clearTimeout(maxTimer);
+                try {
+                    if (node) node.onaudioprocess = null;
+                    node?.disconnect();
+                    source?.disconnect();
+                } catch {}
+                stream?.getTracks().forEach(t => t.stop());
+                try { ctx?.close(); } catch {}
+                ctx = stream = source = node = null;
+            }
+
+            return {
+                get active() { return active; },
+                /** Вызывать прямо из нажатия: аудиоконтекст создаётся синхронно, иначе браузер не даст его запустить */
+                async start() {
+                    if (active) return { ok: true };
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    if (!AC || !navigator.mediaDevices?.getUserMedia) return { ok: false, reason: 'unsupported' };
+                    try { ctx = new AC(); } catch { return { ok: false, reason: 'unsupported' }; }
+                    const resumed = ctx.resume ? ctx.resume().catch(() => {}) : null;
+                    active = true;
+                    chunks = []; length = 0; peak = 0;
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                        });
+                    } catch (err) {
+                        const reason = active ? (err?.name || 'error') : 'cancelled';
+                        active = false;
+                        cleanup();
+                        return { ok: false, reason };
+                    }
+                    if (!active || !ctx) { // остановили, пока ждали разрешения
+                        stream?.getTracks().forEach(t => t.stop());
+                        cleanup();
+                        return { ok: false, reason: 'cancelled' };
+                    }
+                    await resumed;
+                    if (!active || !ctx) { cleanup(); return { ok: false, reason: 'cancelled' }; }
+                    try {
+                        source = ctx.createMediaStreamSource(stream);
+                        node = ctx.createScriptProcessor(4096, 1, 1);
+                    } catch {
+                        active = false;
+                        cleanup();
+                        return { ok: false, reason: 'unsupported' };
+                    }
+                    node.onaudioprocess = (e) => {
+                        if (!active) return;
+                        const data = e.inputBuffer.getChannelData(0);
+                        chunks.push(new Float32Array(data));
+                        length += data.length;
+                        let sum = 0, p = 0;
+                        for (let i = 0; i < data.length; i++) {
+                            const v = data[i];
+                            sum += v * v;
+                            const a = v < 0 ? -v : v;
+                            if (a > p) p = a;
+                        }
+                        if (p > peak) peak = p;
+                        onLevel?.(Math.min(1, Math.sqrt(sum / data.length) * 5));
+                    };
+                    source.connect(node);
+                    node.connect(ctx.destination); // без этого браузер не прокачивает звук через обработчик (выход — тишина)
+                    startedAt = Date.now();
+                    maxTimer = setTimeout(() => onMaxDuration?.(), MAX_RECORD_MS);
+                    return { ok: true };
+                },
+                /** Остановить и получить запись: WAV 16 кГц моно в base64, либо { silent: true } */
+                async stop() {
+                    if (!active) return null;
+                    active = false;
+                    const rate = ctx?.sampleRate || 48000;
+                    const captured = chunks, total = length, maxPeak = peak;
+                    const durationMs = startedAt ? Date.now() - startedAt : 0;
+                    chunks = []; length = 0;
+                    cleanup();
+                    if (!total || maxPeak < 0.015) return { silent: true, durationMs };
+                    const { samples, rate: outRate } = downsample(captured, total, rate, RECORD_SAMPLE_RATE);
+                    return { silent: false, durationMs, base64: await blobToBase64(encodeWav16(samples, outRate)) };
+                },
+                /** Выбросить запись */
+                cancel() {
+                    active = false;
+                    chunks = []; length = 0;
+                    cleanup();
+                }
+            };
+        }
+
+        /** Пульсирующее кольцо вокруг кнопки повторяет громкость голоса — видно, что микрофон вас слышит */
+        function setMicLevel(btn, level) {
+            if (!btn) return;
+            btn.style.boxShadow = level == null ? ''
+                : `0 0 0 ${Math.round(3 + level * 14)}px rgba(239, 68, 68, ${(0.15 + level * 0.3).toFixed(2)})`;
+        }
+
+        /** Один запрос к Gemini: расшифровать запись и (по желанию) сразу перевести */
+        async function transcribeAudio(base64, { sourceLang, targetLang, mode, translate, signal }) {
+            const payload = buildTextPayload('', sourceLang, targetLang, mode);
+            const langHint = sourceLang === 'auto'
+                ? 'Язык речи определи сам: это может быть любой язык мира.'
+                : `Ожидаемый язык речи: ${sourceLang}. Если явно звучит другой язык — распознай его как есть.`;
+            payload.systemInstruction.parts[0].text += `
+
+ВХОД — АУДИОЗАПИСЬ РЕЧИ.
+${langHint}
+- В поле transcript запиши дословно, что сказано, на языке оригинала, с пунктуацией. Не переводи и не пересказывай его.
+- Если речи нет или она неразборчива — верни пустые строки в transcript и translation. Ничего не придумывай.
+- ${translate ? 'В поле translation — перевод transcript по правилам выше.' : 'Поля translation и transliteration оставь пустыми строками.'}`;
+            payload.contents = [{
+                role: 'user',
+                parts: [
+                    { inlineData: { mimeType: 'audio/wav', data: base64 } },
+                    { text: translate ? 'Распознай речь из аудио и переведи её.' : 'Распознай речь из аудио.' }
+                ]
+            }];
+            const schema = payload.generationConfig.responseSchema;
+            schema.properties.transcript = { type: 'STRING', description: 'Дословная расшифровка речи на языке оригинала' };
+            schema.required = ['transcript', ...schema.required];
+            schema.propertyOrdering = ['transcript', 'detectedLanguage', 'translation', 'transliteration'];
+
+            const result = await callGemini(MODEL_NAME, payload, { signal, timeoutMs: PHOTO_TIMEOUT_MS, retries: 1 });
+            const json = extractResponseJson(result);
+            return {
+                transcript: String(json?.transcript || '').trim(),
+                translation: String(json?.translation || '').trim(),
+                translit: String(json?.transliteration || '').trim(),
+                detectedLang: String(json?.detectedLanguage || '').trim()
+            };
+        }
+
         /** Микрофон → квадрат «стоп» во время записи → крутилка, пока дорабатываются последние слова */
         function setMicUI(mode) {
             micMode = mode;
             const on = mode !== 'idle';
             els.micBtn.classList.toggle('bg-rose-600', on);
             els.micBtn.classList.toggle('text-white', on);
-            els.micBtn.classList.toggle('mic-listening', mode === 'listening');
+            els.micBtn.classList.toggle('mic-listening', mode === 'listening' && mainVoiceEngine !== 'recorder');
             els.micBtn.classList.toggle('opacity-80', mode === 'finishing');
+            if (mode !== 'listening') setMicLevel(els.micBtn, null);
             els.micBtn.classList.toggle('text-slate-300', !on);
             els.micBtn.classList.toggle('hover:bg-yx-pill', !on);
             els.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-3.5 h-3.5')
@@ -2280,58 +2474,152 @@ ${sourceRule}
             if (mode === 'listening') startRecTicker();
         }
 
-        function setupVoiceInput() {
-            if (!SpeechRecognitionCtor) {
-                els.micBtn.addEventListener('click', () => {
-                    showToast('Голосовой ввод не поддерживается в этом браузере', 'error');
-                });
-                return;
-            }
+        let mainRecorder = null;
+        let mainVoiceEngine = null;   // 'recorder' (диктофон + Gemini) | 'dictation' (системное распознавание)
+        let mainVoiceBase = '';       // текст, который был в поле до начала записи
 
-            let baseText = '';
+        function setupVoiceInput() {
             let speechLang = 'Русский';
-            mainDictation = createDictation({
-                getLang: () => speechLangFor(speechLang),
-                onText: (spoken) => setSourceText(joinSpeech(baseText, spoken)),
-                onStop: ({ cancelled, error }) => {
-                    state.isListening = false;
-                    setMicUI('idle');
-                    if (error) showToast(speechErrorMessage(error), 'error');
-                    // Перевод — только после того, как пользователь сам нажал «стоп»
-                    if (!cancelled && els.sourceText.value.trim()) translateText();
+            if (SpeechRecognitionCtor) {
+                mainDictation = createDictation({
+                    getLang: () => speechLangFor(speechLang),
+                    onText: (spoken) => setSourceText(joinSpeech(mainVoiceBase, spoken)),
+                    onStop: ({ cancelled, error }) => {
+                        mainVoiceEngine = null;
+                        state.isListening = false;
+                        setMicUI('idle');
+                        if (error) showToast(speechErrorMessage(error), 'error');
+                        // Перевод — только после того, как пользователь сам нажал «стоп»
+                        if (!cancelled && els.sourceText.value.trim()) translateText();
+                    }
+                });
+            }
+            mainRecorder = createAudioRecorder({
+                onLevel: (level) => { if (micMode === 'listening') setMicLevel(els.micBtn, level); },
+                onMaxDuration: () => {
+                    showToast('Запись идёт уже 5 минут — перевожу', 'info');
+                    finishMainVoice();
                 }
             });
 
             let lastTap = 0;
-            els.micBtn.addEventListener('click', () => {
+            els.micBtn.addEventListener('click', async () => {
                 const now = Date.now();
                 if (now - lastTap < MIC_TAP_GUARD_MS) return;
                 lastTap = now;
                 if (micMode === 'finishing') return; // уже останавливаемся — второй тап не начинает новую запись
-
-                if (mainDictation.active) {
-                    // Кнопка меняется сразу, не дожидаясь браузера — видно, что нажатие принято
-                    setMicUI('finishing');
-                    mainDictation.stop();
+                if (micMode === 'listening') {
+                    finishMainVoice();
                     return;
                 }
+
                 stopSpeaking();
                 clearTimeout(debounceTimer);
                 textReq.cancel();
                 setLoading(false);
-                // Диктовка дописывает текст, а не стирает уже набранный
-                baseText = els.sourceText.value.trim();
+                // Запись дописывается к уже набранному тексту
+                mainVoiceBase = els.sourceText.value.trim();
                 // Убираем клавиатуру: она мешает и может перехватить микрофон
                 els.sourceText.blur();
-                speechLang = mainSpeechLanguage();
                 state.isListening = true;
                 mainRecStartedAt = Date.now();
+
+                if (useAudioCapture) {
+                    mainVoiceEngine = 'recorder';
+                    setMicUI('listening');
+                    const res = await mainRecorder.start();
+                    if (res.ok) {
+                        showToast('Говорите сколько нужно, паузы не важны. ■ — перевести', 'info');
+                        return;
+                    }
+                    if (res.reason === 'cancelled') return;
+                    // Чат не дал записывать звук напрямую — дальше работаем через системное распознавание
+                    useAudioCapture = false;
+                }
+
+                if (!mainDictation) {
+                    mainVoiceEngine = null;
+                    state.isListening = false;
+                    setMicUI('idle');
+                    showToast('Голосовой ввод не поддерживается в этом браузере', 'error');
+                    return;
+                }
+                mainVoiceEngine = 'dictation';
+                speechLang = mainSpeechLanguage();
                 setMicUI('listening');
                 showToast(state.sourceLang === 'auto'
                     ? `Слушаю: ${speechLang}. Другой язык — выберите вместо «АВТО»`
                     : 'Говорите, паузы не страшны. Нажмите ■, чтобы перевести', 'info');
                 mainDictation.start();
             });
+        }
+
+        /** Второе нажатие (или 5 минут записи): остановить и перевести */
+        async function finishMainVoice() {
+            if (micMode !== 'listening') return;
+            setMicUI('finishing'); // кнопка меняется сразу — видно, что нажатие принято
+            if (mainVoiceEngine === 'dictation') {
+                mainDictation.stop();
+                return;
+            }
+            const audio = await mainRecorder.stop();
+            await processMainAudio(audio);
+        }
+
+        /** Прервать запись без перевода (например, при открытии диалога) */
+        function cancelMainVoice() {
+            if (micMode === 'idle') return;
+            if (mainVoiceEngine === 'recorder') mainRecorder?.cancel();
+            else mainDictation?.cancel();
+            mainVoiceEngine = null;
+            state.isListening = false;
+            setMicUI('idle');
+        }
+
+        async function processMainAudio(audio) {
+            const done = () => {
+                mainVoiceEngine = null;
+                state.isListening = false;
+                setMicUI('idle');
+            };
+            if (!audio || audio.silent) {
+                done();
+                if (audio?.silent) showToast('Ничего не слышно — попробуйте ещё раз', 'info');
+                return;
+            }
+
+            const base = mainVoiceBase;
+            const { sourceLang, targetLang, mode } = state;
+            const { id, signal } = textReq.begin();
+            setLoading(true);
+            try {
+                // Если в поле уже был текст — только расшифровка, а перевод потом целиком
+                const data = await transcribeAudio(audio.base64, { sourceLang, targetLang, mode, translate: !base, signal });
+                if (!textReq.isCurrent(id)) return;
+                if (!data.transcript) {
+                    showToast('Речь не распознана — попробуйте ещё раз', 'info');
+                    return;
+                }
+                const full = joinSpeech(base, data.transcript).slice(0, MAX_SOURCE_CHARS);
+                setSourceText(full);
+                if (!base && data.translation) {
+                    translationCache.set(translationKey(full, sourceLang, targetLang, mode),
+                        { translation: data.translation, translit: data.translit, detectedLang: data.detectedLang });
+                }
+                textReq.end(id);
+                setLoading(false);
+                done();
+                translateText(); // перевод уже в кэше — покажется мгновенно и попадёт в историю
+            } catch (err) {
+                if (!textReq.isCurrent(id) || isAbort(err)) return;
+                showToast(describeError(err, 'Не удалось распознать речь'), 'error');
+            } finally {
+                if (textReq.isCurrent(id)) {
+                    setLoading(false);
+                    textReq.end(id);
+                }
+                if (micMode !== 'idle') done();
+            }
         }
 
         /* =========================================================
@@ -2847,8 +3135,11 @@ ${sourceRule}
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     stopLiveCameraStream();
-                    mainDictation?.cancel();
-                    stopDialogRecognizer();
+                    // Запись через диктофон не теряем: сворачивание = «стоп», сказанное переводится
+                    if (micMode === 'listening' && mainVoiceEngine === 'recorder') finishMainVoice();
+                    else if (mainVoiceEngine === 'dictation') cancelMainVoice();
+                    if (state.dialog.listeningSide && dialogVoiceEngine === 'recorder') finishDialogVoice(state.dialog.listeningSide);
+                    else if (dialogVoiceEngine === 'dictation') stopDialogRecognizer();
                 } else if (isCameraOpen() && isLiveView()) {
                     startLiveCameraStream();
                 }
@@ -3300,8 +3591,9 @@ ${sourceRule}
                     : state.dialog.listeningSide === side ? 'listening' : 'idle';
                 ui.micBtn.classList.toggle('bg-rose-600', mode !== 'idle');
                 ui.micBtn.classList.toggle('bg-yx-accent', mode === 'idle');
-                ui.micBtn.classList.toggle('mic-listening', mode === 'listening');
+                ui.micBtn.classList.toggle('mic-listening', mode === 'listening' && dialogVoiceEngine !== 'recorder');
                 ui.micBtn.classList.toggle('opacity-80', mode === 'finishing');
+                if (mode !== 'listening') setMicLevel(ui.micBtn, null);
                 if (ui.micMode !== mode) {
                     ui.micMode = mode;
                     ui.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-6 h-6')
@@ -3384,13 +3676,108 @@ ${sourceRule}
             if (msg.translated && state.dialog.autoSpeak) speakText(msg.translated, to);
         }
 
-        /** Прервать диктовку в диалоге без отправки (сказанное остаётся в поле ввода) */
+        let dialogRecorder = null;
+        let dialogVoiceEngine = null;   // 'recorder' | 'dictation'
+
+        function getDialogRecorder() {
+            if (!dialogRecorder) {
+                dialogRecorder = createAudioRecorder({
+                    onLevel: (level) => {
+                        const side = state.dialog.listeningSide;
+                        if (side && !state.dialog.finishingSide) setMicLevel(dialogUI[side]?.micBtn, level);
+                    },
+                    onMaxDuration: () => {
+                        const side = state.dialog.listeningSide;
+                        if (side) finishDialogVoice(side);
+                    }
+                });
+            }
+            return dialogRecorder;
+        }
+
+        /** Прервать запись в диалоге без отправки */
         function stopDialogRecognizer() {
             dialogRecognizer?.cancel();
             dialogRecognizer = null;
+            dialogRecorder?.cancel();
+            dialogVoiceEngine = null;
             state.dialog.listeningSide = null;
             state.dialog.finishingSide = null;
             renderDialogMicState();
+        }
+
+        /** Закончить запись стороны и отправить фразу (перевод догружается в пузыре «…») */
+        async function finishDialogVoice(side) {
+            if (state.dialog.listeningSide !== side || state.dialog.finishingSide) return;
+            state.dialog.finishingSide = side;
+            renderDialogMicState();
+            if (dialogVoiceEngine === 'dictation') {
+                await dialogRecognizer?.stop();
+                return;
+            }
+            const audio = await dialogRecorder.stop();
+            dialogVoiceEngine = null;
+            state.dialog.listeningSide = null;
+            state.dialog.finishingSide = null;
+            renderDialogMicState();
+            if (!audio || audio.silent) {
+                if (audio?.silent) showToast('Ничего не слышно — попробуйте ещё раз', 'info');
+                return;
+            }
+            const input = dialogUI[side].input;
+            const base = input.value.trim();
+            input.value = '';
+            sendDialogAudio(side, audio, base); // не ждём: собеседник может сразу отвечать
+        }
+
+        async function sendDialogAudio(side, audio, baseText) {
+            const other = side === 'a' ? 'b' : 'a';
+            const from = state.dialog[side];
+            const to = state.dialog[other];
+            const mode = state.dialog.essence ? 'essence' : 'fast';
+            const signal = dialogAbort?.signal;
+
+            if (baseText) {
+                // К набранному тексту дописываем сказанное и переводим целиком
+                try {
+                    const data = await transcribeAudio(audio.base64, { sourceLang: from, targetLang: to, mode, translate: false, signal });
+                    sendDialogMessage(side, joinSpeech(baseText, data.transcript));
+                } catch (err) {
+                    if (isAbort(err)) return;
+                    dialogUI[side].input.value = baseText;
+                    showToast(describeError(err, 'Не удалось распознать речь'), 'error');
+                }
+                return;
+            }
+
+            const msg = { from: side, original: '🎤 …', translated: '', pending: true, error: '' };
+            state.dialog.log.push(msg);
+            state.dialog.log = state.dialog.log.slice(-DIALOG_LOG_LIMIT);
+            renderDialog();
+
+            try {
+                const data = await transcribeAudio(audio.base64, { sourceLang: from, targetLang: to, mode, translate: true, signal });
+                if (!data.transcript) {
+                    state.dialog.log = state.dialog.log.filter(m => m !== msg);
+                    if (!signal?.aborted) showToast('Речь не распознана — попробуйте ещё раз', 'info');
+                } else {
+                    msg.original = data.transcript;
+                    msg.translated = data.translation;
+                    if (!data.translation) msg.error = 'Не удалось перевести';
+                    else translationCache.set(translationKey(data.transcript, from, to, mode),
+                        { translation: data.translation, translit: data.translit, detectedLang: data.detectedLang });
+                }
+            } catch (err) {
+                msg.original = '🎤 голосовое сообщение';
+                msg.error = isAbort(err) ? 'Перевод отменён' : describeError(err, 'Не удалось распознать речь');
+            } finally {
+                msg.pending = false;
+            }
+
+            saveDialogLog();
+            if (signal?.aborted) return;
+            renderDialog();
+            if (msg.translated && state.dialog.autoSpeak && state.dialog.log.includes(msg)) speakText(msg.translated, to);
         }
 
         /** Нажатие на микрофон: первое — начать говорить, второе — закончить и отправить перевод */
@@ -3400,36 +3787,48 @@ ${sourceRule}
             const now = Date.now();
             if (now - lastDialogMicTap < MIC_TAP_GUARD_MS) return;
             lastDialogMicTap = now;
-            if (state.dialog.finishingSide) return; // предыдущая фраза ещё дораспознаётся
+            if (state.dialog.finishingSide) return; // предыдущая фраза ещё дозаписывается
 
             if (state.dialog.listeningSide === side) {
-                state.dialog.finishingSide = side;
-                renderDialogMicState();
-                await dialogRecognizer?.stop();
+                await finishDialogVoice(side);
                 return;
             }
+            // Если говорил собеседник — сначала отправляем его фразу, потом включаем ваш микрофон
+            if (state.dialog.listeningSide) await finishDialogVoice(state.dialog.listeningSide);
+            stopSpeaking();
+            dialogUI[side].input.blur();
+
+            state.dialog.listeningSide = side;
+            dialogRecStartedAt = Date.now();
+            if (useAudioCapture) {
+                dialogVoiceEngine = 'recorder';
+                renderDialogMicState();
+                startRecTicker();
+                const res = await getDialogRecorder().start();
+                if (res.ok || res.reason === 'cancelled') return;
+                useAudioCapture = false; // запись звука недоступна — системное распознавание
+            }
+            startDialogDictation(side);
+        }
+
+        /** Запасной путь: системное распознавание речи с перезапуском на паузах */
+        function startDialogDictation(side) {
             if (!SpeechRecognitionCtor) {
+                dialogVoiceEngine = null;
+                state.dialog.listeningSide = null;
+                renderDialogMicState();
                 showToast('Голосовой ввод недоступен — напишите текст', 'error');
                 dialogUI[side].input.focus();
                 return;
             }
-
-            // Если говорил собеседник — сначала отправляем его фразу, потом включаем ваш микрофон
-            if (dialogRecognizer?.active) {
-                state.dialog.finishingSide = state.dialog.listeningSide;
-                renderDialogMicState();
-                await dialogRecognizer.stop();
-            }
-            stopSpeaking();
-
             const input = dialogUI[side].input;
-            input.blur();
             const baseText = input.value.trim();
             const dictation = createDictation({
                 getLang: () => speechLangFor(state.dialog[side]),
                 onText: (spoken) => { input.value = joinSpeech(baseText, spoken); },
                 onStop: ({ cancelled, error }) => {
                     if (dialogRecognizer === dictation) dialogRecognizer = null;
+                    dialogVoiceEngine = null;
                     if (state.dialog.listeningSide === side) state.dialog.listeningSide = null;
                     if (state.dialog.finishingSide === side) state.dialog.finishingSide = null;
                     renderDialogMicState();
@@ -3443,6 +3842,7 @@ ${sourceRule}
             });
 
             dialogRecognizer = dictation;
+            dialogVoiceEngine = 'dictation';
             state.dialog.listeningSide = side;
             dialogRecStartedAt = Date.now();
             renderDialogMicState();
@@ -3451,7 +3851,7 @@ ${sourceRule}
         }
 
         function openDialogMode() {
-            mainDictation?.cancel();
+            cancelMainVoice();
             stopSpeaking();
             dialogAbort = new AbortController();
             els.dialogModal.classList.remove('hidden');
