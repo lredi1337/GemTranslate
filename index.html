@@ -28,7 +28,11 @@
                             pillHover: '#30333B',
                             divider: '#26282E',
                             muted: '#8E929B',
-                            accent: '#4C8BF5'
+                            accent: '#4C8BF5',
+                            sheet: '#1B1C20',
+                            panel: '#2A2B30',
+                            chip: '#3A4152',
+                            chipHover: '#465066'
                         }
                     }
                 }
@@ -42,7 +46,7 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background-color: #0E0F12;
+            background-color: #2A2B30;
             overscroll-behavior: none;
             -webkit-tap-highlight-color: transparent;
         }
@@ -51,32 +55,24 @@
             height: 100dvh;
         }
 
-        /* Учёт безопасного отступа сверху (вырез экрана и системные оверлеи) */
-        #main-container {
-            padding-top: max(0.625rem, env(safe-area-inset-top));
-            padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-        }
+        /* Безопасные отступы: вырез экрана сверху и системная полоса жестов снизу */
+        #app-bar { margin-top: max(0.25rem, env(safe-area-inset-top)); }
+        #main-container { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
 
-        /* Состояние при открытой экранной клавиатуре */
-        body.keyboard-open #history-footer {
-            display: none !important;
-        }
-        body.keyboard-open #main-container {
-            padding-top: max(0.375rem, env(safe-area-inset-top));
-            padding-bottom: 0.375rem;
-            gap: 0.375rem;
-        }
-        body.keyboard-open #lang-header {
-            height: 2.5rem;
-        }
-        body.keyboard-open #input-section {
-            padding-top: 0.5rem;
-            padding-bottom: 0.375rem;
-        }
-        body.keyboard-open #output-section {
-            padding-top: 0.5rem;
-            padding-bottom: 0.375rem;
-        }
+        /* Пустое поле: компактный ввод, под ним «Вставить» и недавние; с текстом — ввод и перевод */
+        #main-sheet:not(.has-text) #source-text { flex: 0 0 auto; height: 6.5rem; }
+        #main-sheet:not(.has-text) #output-section { display: none; }
+        #main-sheet.has-text #empty-state { display: none; }
+        /* Идёт запись в пустое поле: только крупное «Говорите…» */
+        #main-sheet.recording:not(.has-text) #empty-state { display: none; }
+        #main-sheet.recording:not(.has-text) #source-text { flex: 1 1 auto; height: auto; }
+
+        /* Экранная клавиатура: прячем большие кнопки, оставляем языки */
+        body.keyboard-open #action-row { display: none; }
+        body.keyboard-open #control-panel { padding-top: 0.5rem; }
+        body.keyboard-open #main-container { padding-bottom: 0.5rem; }
+        body.keyboard-open #lang-header button[id$="lang-btn"] { height: 2.75rem; }
+        body.keyboard-open #main-sheet:not(.has-text) #empty-state { display: none; }
 
         /* Тонкий скроллбар внутри текстовых областей */
         .inner-scroll::-webkit-scrollbar {
@@ -125,24 +121,6 @@
         #camera-stage.zoomable { touch-action: none; }
         #captured-wrapper { will-change: transform; }
 
-        /* Верхняя половина режима диалога разворачивается к собеседнику */
-        .dialog-half-flipped { transform: rotate(180deg); }
-
-        /* В развёрнутой половине собеседника микрофон уходит вправо (на экране),
-           а слева остаётся свободная зона под системную кнопку закрытия — без мисскликов */
-        #dialog-half-b.dialog-half-flipped > form {
-            flex-direction: row-reverse;
-            padding-right: 4rem;
-        }
-        @media (min-width: 640px) {
-            #dialog-half-b.dialog-half-flipped > form { padding-right: 0; }
-        }
-        /* Без разворота шапка собеседника сверху слева — сдвигаем её из-под крестика */
-        #dialog-half-b:not(.dialog-half-flipped) > div:first-child { padding-left: 4rem; }
-        @media (min-width: 640px) {
-            #dialog-half-b:not(.dialog-half-flipped) > div:first-child { padding-left: 0; }
-        }
-
         /* Тап по кнопке срабатывает сразу, без ожидания двойного тапа */
         button { touch-action: manipulation; }
 
@@ -151,7 +129,7 @@
         }
     </style>
 </head>
-<body class="bg-yx-bg text-slate-100 font-sans w-full overflow-hidden select-none">
+<body class="bg-yx-panel text-slate-100 font-sans w-full overflow-hidden select-none">
 
     <!-- Всплывающее уведомление (Toast) -->
     <div id="toast" role="status" aria-live="polite" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] transform -translate-y-6 opacity-0 transition-all duration-200 pointer-events-none flex items-center gap-2 bg-[#2B2D31] border border-[#3A3D42] text-white px-3.5 py-2 rounded-full shadow-2xl text-xs font-medium whitespace-nowrap max-w-[92vw]">
@@ -334,244 +312,246 @@
         </div>
     </div>
 
-    <!-- Режим диалога: экран делится между двумя собеседниками -->
-    <div id="dialog-modal" role="dialog" aria-modal="true" aria-label="Режим диалога" class="hidden fixed inset-0 z-50 bg-yx-bg flex flex-col select-none" style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);">
-        <!-- Половина собеседника (сверху, по умолчанию развёрнута к нему) -->
-        <section id="dialog-half-b" class="flex-1 min-h-0 flex flex-col gap-2 px-3.5 py-3 transition-transform duration-300"></section>
-
-        <div class="h-12 shrink-0 flex items-center justify-between gap-2 px-2 border-y border-yx-divider bg-yx-cardAlt">
-            <button id="dialog-close-btn" type="button" title="Закрыть диалог" aria-label="Закрыть диалог" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <!-- Режим диалога: переписка, где каждая фраза сразу переведена -->
+    <div id="dialog-modal" role="dialog" aria-modal="true" aria-label="Режим диалога" class="hidden fixed inset-0 z-50 bg-yx-sheet flex flex-col select-none" style="padding-bottom: env(safe-area-inset-bottom);">
+        <!-- Шапка: левый угол пустой — там системная кнопка закрытия -->
+        <header class="shrink-0 h-16 flex items-center gap-1.5 pl-16 pr-2 sm:pl-4" style="margin-top: env(safe-area-inset-top);">
+            <h2 class="flex-1 min-w-0 text-lg font-semibold text-white truncate">Диалог</h2>
+            <button id="dialog-essence-btn" type="button" aria-pressed="false" title="Передавать суть: без слов-паразитов, повторов и воды" class="h-9 px-3.5 rounded-full text-[13px] font-medium bg-white/[0.06] text-slate-300 transition-colors">Суть</button>
+            <button id="dialog-close-btn" type="button" title="Закрыть диалог" aria-label="Закрыть диалог" class="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 hover:bg-white/10 active:scale-90 transition-all">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
             </button>
-            <div class="flex items-center gap-0.5 min-w-0">
-                <button id="dialog-autospeak-btn" type="button" aria-pressed="true" title="Автоматически озвучивать перевод" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-300 hover:bg-white/10 transition-colors">Озвучка</button>
-                <button id="dialog-flip-btn" type="button" aria-pressed="true" title="Развернуть верхнюю половину к собеседнику" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-300 hover:bg-white/10 transition-colors">Лицом к лицу</button>
-                <button id="dialog-essence-btn" type="button" aria-pressed="false" title="Передавать суть: без слов-паразитов, повторов и воды" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-300 hover:bg-white/10 transition-colors">Суть</button>
-                <button id="dialog-clear-btn" type="button" title="Очистить диалог" aria-label="Очистить диалог" class="w-8 h-8 rounded-full flex items-center justify-center text-yx-muted hover:text-white hover:bg-white/10 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                    </svg>
-                </button>
+        </header>
+
+        <!-- Нажимается только переключатель справа: левый край строки рядом с системным крестиком -->
+        <div class="shrink-0 h-12 pl-5 pr-3 flex items-center justify-between border-y border-white/[0.07] text-[15px] text-slate-100">
+            <span id="dialog-autospeak-label">Озвучивать автоматически</span>
+            <button id="dialog-autospeak-btn" type="button" role="switch" aria-checked="true" aria-labelledby="dialog-autospeak-label" class="h-11 px-2 flex items-center">
+                <span id="dialog-autospeak-track" class="relative w-11 h-6 rounded-full bg-white/20 transition-colors">
+                    <span id="dialog-autospeak-knob" class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"></span>
+                </span>
+            </button>
+        </div>
+
+        <!-- Переписка -->
+        <div id="dialog-log" class="flex-1 min-h-0 overflow-y-auto inner-scroll px-4 py-4 select-text">
+            <div id="dialog-messages" class="flex flex-col gap-5"></div>
+            <div class="flex justify-center pt-6 pb-1">
+                <button id="dialog-clear-btn" type="button" class="h-10 px-5 rounded-full bg-white/[0.07] hover:bg-white/10 text-sm font-medium text-slate-100 active:scale-95 transition-all">Очистить историю</button>
             </div>
         </div>
 
-        <!-- Ваша половина (снизу) -->
-        <section id="dialog-half-a" class="flex-1 min-h-0 flex flex-col gap-2 px-3.5 py-3"></section>
+        <!-- Набрать текстом (запасной путь, если говорить неудобно) -->
+        <form id="dialog-form" class="shrink-0 flex items-center gap-2 px-4 pt-2">
+            <button id="dialog-type-side" type="button" title="На чьём языке вы пишете — нажмите, чтобы сменить" class="h-11 min-w-[3rem] px-2.5 rounded-2xl text-xs font-bold uppercase shrink-0 transition-colors"></button>
+            <input id="dialog-input" type="text" autocomplete="off" enterkeyhint="send" placeholder="Написать сообщение…" class="flex-1 min-w-0 h-11 bg-white/[0.06] rounded-2xl px-4 text-[15px] text-white placeholder-[#8A8D95] focus:outline-none focus:ring-1 focus:ring-yx-accent select-text">
+            <button type="submit" aria-label="Отправить" class="w-11 h-11 shrink-0 rounded-full bg-white/[0.08] hover:bg-white/[0.12] text-white flex items-center justify-center active:scale-90 transition-all">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m0 0l-6-6m6 6l-6 6"/></svg>
+            </button>
+        </form>
+
+        <!-- Микрофоны собеседников с выбором языка -->
+        <div class="shrink-0 grid grid-cols-2 gap-4 px-5 pt-4 pb-4">
+            <div class="flex flex-col items-center gap-3">
+                <button id="dialog-mic-a" type="button" aria-label="Говорить" class="w-[72px] h-[72px] rounded-full flex items-center justify-center active:scale-95 transition-all"></button>
+                <button id="dialog-lang-a" type="button" class="w-full max-w-[11rem] h-11 rounded-full border border-white/40 text-[15px] text-slate-100 px-3 flex items-center justify-center gap-1.5 min-w-0 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"></button>
+            </div>
+            <div class="flex flex-col items-center gap-3">
+                <button id="dialog-mic-b" type="button" aria-label="Говорить" class="w-[72px] h-[72px] rounded-full flex items-center justify-center active:scale-95 transition-all"></button>
+                <button id="dialog-lang-b" type="button" class="w-full max-w-[11rem] h-11 rounded-full border border-white/40 text-[15px] text-slate-100 px-3 flex items-center justify-center gap-1.5 min-w-0 active:scale-95 transition-all disabled:opacity-50 disabled:pointer-events-none"></button>
+            </div>
+        </div>
     </div>
 
     <!-- Корневой контейнер, высота которого синхронизируется с visualViewport -->
-    <div id="app-root" class="w-full flex flex-col overflow-hidden">
+    <div id="app-root" class="w-full flex flex-col overflow-hidden bg-yx-panel">
+        <div id="main-container" class="max-w-2xl w-full h-full mx-auto flex flex-col overflow-hidden">
 
-        <!-- Главный контейнер -->
-        <div id="main-container" class="max-w-2xl w-full h-full mx-auto px-3.5 flex flex-col gap-2.5 overflow-hidden transition-all duration-150">
+            <!-- 1. Верхний лист: ввод текста и перевод -->
+            <section id="main-sheet" class="flex-1 min-h-0 flex flex-col bg-yx-sheet rounded-b-[28px] shadow-2xl overflow-hidden">
 
-            <!-- 1. Верхняя панель выбора языков с безопасной зоной под системный кружок закрытия -->
-            <header id="lang-header" class="h-12 shrink-0 flex items-center pl-16 pr-0.5 sm:px-0 transition-all duration-150">
-                <div class="w-full h-11 bg-yx-card/95 border border-white/[0.07] rounded-2xl grid grid-cols-[minmax(0,0.8fr)_30px_minmax(0,1.2fr)] items-center px-1 shadow-lg">
-                    <!-- Левый язык (Исходный) -->
-                    <button id="source-lang-btn" type="button" aria-label="Исходный язык" class="h-9 w-full inline-flex items-center justify-center gap-1 text-white text-[10.5px] sm:text-xs font-semibold uppercase tracking-normal px-1 rounded-xl hover:bg-white/[0.06] active:scale-95 transition-all min-w-0">
-                        <span id="source-lang-label" class="truncate">АВТО</span>
-                        <svg class="w-3 h-3 text-yx-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 9l-7 7-7-7" />
+                <!-- Шапка: левый угол пустой — там системная кнопка закрытия -->
+                <header id="app-bar" class="h-12 shrink-0 flex items-center justify-end gap-1 pl-16 pr-2 sm:pl-4">
+                    <div class="relative">
+                        <button id="mode-pill-btn" type="button" aria-haspopup="menu" aria-expanded="false" class="h-9 inline-flex items-center gap-1.5 bg-white/[0.06] hover:bg-white/10 text-slate-200 text-[13px] font-medium pl-3.5 pr-2.5 rounded-full transition-colors active:scale-95">
+                            <span id="mode-pill-label">Быстрый перевод</span>
+                            <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                    <!-- Выпадающее меню режимов -->
+                    <div id="mode-dropdown" role="menu" class="hidden absolute top-full right-0 mt-2 w-60 bg-[#25272D] border border-white/10 rounded-2xl shadow-2xl py-1.5 z-30">
+                        <button type="button" role="menuitemradio" data-mode="fast" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-white bg-white/10 flex items-center justify-between">
+                            <span>Быстрый перевод</span>
+                            <span class="check-mark text-yx-accent shrink-0">✓</span>
+                        </button>
+                        <button type="button" role="menuitemradio" data-mode="essence" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between gap-2">
+                            <div class="min-w-0">
+                                <div class="font-semibold text-yx-accent">Передать суть</div>
+                                <div class="text-[10.5px] text-yx-muted font-normal leading-tight mt-0.5">Без воды и слов-паразитов</div>
+                            </div>
+                            <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
+                        </button>
+                        <button type="button" role="menuitemradio" data-mode="casual" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between">
+                            <span>Разговорный</span>
+                            <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
+                        </button>
+                        <button type="button" role="menuitemradio" data-mode="formal" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between">
+                            <span>Деловой</span>
+                            <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
+                        </button>
+                        <button type="button" role="menuitemradio" data-mode="literal" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between">
+                            <span>Дословный</span>
+                            <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
+                        </button>
+                    </div>
+                    </div>
+                    <button id="history-open-btn" type="button" title="История и избранное" aria-label="История и избранное" class="w-10 h-10 rounded-full flex items-center justify-center text-slate-200 hover:bg-white/10 active:scale-90 transition-all">
+                        <svg class="w-[22px] h-[22px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                     </button>
+                </header>
 
-                    <!-- Кнопка обмена языков (⇄) -->
-                    <button id="swap-btn" type="button" title="Поменять языки местами" aria-label="Поменять языки местами" class="w-7 h-7 mx-auto shrink-0 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/[0.08] active:scale-90 transition-all">
-                        <svg id="swap-icon" class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                        </svg>
-                    </button>
-
-                    <!-- Правый язык (Целевой) -->
-                    <button id="target-lang-btn" type="button" aria-label="Целевой язык" class="h-9 w-full inline-flex items-center justify-center gap-1 text-white text-[10.5px] sm:text-xs font-semibold uppercase tracking-normal px-1 rounded-xl hover:bg-white/[0.06] active:scale-95 transition-all min-w-0">
-                        <span id="target-lang-label" class="truncate">ВЬЕТНАМСКИЙ</span>
-                        <svg class="w-3 h-3 text-yx-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 9l-7 7-7-7" />
-                        </svg>
-                    </button>
-                </div>
-            </header>
-
-            <!-- 2. Рабочая область переводчика: две сбалансированные карточки -->
-            <main class="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
-
-                <!-- Верхняя карточка: Ввод текста -->
-                <section id="input-section" class="flex-[1_1_50%] min-h-[76px] bg-yx-card rounded-3xl border border-white/[0.07] shadow-xl flex flex-col relative px-4 pt-3 pb-2.5 overflow-hidden">
-                    <!-- Бейдж автоопределения и кнопка очистки '×' -->
-                    <div class="flex items-center justify-between h-5 shrink-0 mb-1">
-                        <span id="rec-indicator" class="hidden text-[11px] font-semibold text-rose-400 tabular-nums truncate" aria-live="polite">● 0:00</span>
-                        <span id="detected-badge" class="text-[11px] font-medium text-yx-accent opacity-0 transition-opacity truncate">
+                <!-- Ввод -->
+                <div id="input-section" class="flex-1 min-h-0 flex flex-col px-5">
+                    <!-- Статус справа (слева может быть системный крестик) и очистка -->
+                    <div class="h-7 shrink-0 flex items-center justify-end gap-2">
+                        <span id="rec-indicator" class="hidden text-xs font-semibold text-rose-400 tabular-nums truncate" aria-live="polite">● 0:00</span>
+                        <span id="detected-badge" class="text-xs font-medium text-yx-accent opacity-0 transition-opacity truncate">
                             Определен: —
                         </span>
-                        <button id="clear-btn" type="button" title="Очистить" aria-label="Очистить" class="w-6 h-6 -mr-1 rounded-full flex items-center justify-center text-yx-muted hover:text-white hover:bg-yx-pill transition-all opacity-0 pointer-events-none">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button id="clear-btn" type="button" title="Очистить" aria-label="Очистить" class="w-8 h-8 -mr-2 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 transition-all opacity-0 pointer-events-none">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                             </svg>
                         </button>
                     </div>
 
-                    <!-- Поле ввода текста -->
                     <textarea
                         id="source-text"
-                        placeholder="Начните писать текст"
+                        placeholder="Введите текст"
                         maxlength="8000"
                         aria-label="Исходный текст"
-                        class="w-full flex-1 min-h-[44px] overflow-y-auto bg-transparent text-lg sm:text-2xl font-normal text-white placeholder-[#5D616B] resize-none focus:outline-none leading-snug inner-scroll select-text"
+                        class="w-full flex-1 min-h-[56px] overflow-y-auto bg-transparent text-[26px] sm:text-[30px] font-normal text-white placeholder-[#8A8D95] resize-none focus:outline-none leading-tight inner-scroll select-text"
                     ></textarea>
 
-                    <!-- Нижняя панель действий в зоне ввода -->
-                    <div class="h-9 shrink-0 flex items-center justify-between pt-1.5 mt-1 border-t border-white/[0.04]">
-                        <!-- Слева: Вставить из буфера и Перевод по фото -->
-                        <div class="flex items-center gap-1">
-                            <button id="paste-btn" type="button" title="Вставить из буфера" aria-label="Вставить из буфера" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all">
-                                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <!-- Пока поле пустое: «Вставить» и недавние переводы -->
+                    <div id="empty-state" class="flex-1 min-h-0 flex flex-col pb-3">
+                        <div class="shrink-0 pb-4">
+                            <button id="paste-btn" type="button" title="Вставить из буфера" class="h-11 inline-flex items-center gap-2.5 pl-4 pr-5 rounded-full bg-yx-chip hover:bg-yx-chipHover text-slate-100 text-[15px] font-medium active:scale-95 transition-all">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                                 </svg>
+                                Вставить
                             </button>
-
-                            <button id="photo-btn" type="button" title="Камера и фотоперевод" aria-label="Камера и фотоперевод" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all">
-                                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                            </button>
-                            <button id="dialog-btn" type="button" title="Режим диалога" aria-label="Режим диалога" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all">
-                                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-                                </svg>
-                            </button>
-                            <!-- Скрытые input для галереи и системной камеры -->
-                            <input id="photo-input" type="file" accept="image/*" class="hidden">
-                            <input id="camera-capture-input" type="file" accept="image/*" capture="environment" class="hidden">
                         </div>
-
-                        <!-- По центру: Пилюля выбора режима перевода -->
-                        <div class="relative">
-                            <button id="mode-pill-btn" type="button" aria-haspopup="menu" aria-expanded="false" class="inline-flex items-center gap-1.5 bg-yx-pill hover:bg-yx-pillHover border border-white/[0.06] text-slate-200 text-xs font-medium px-3.5 py-1.5 rounded-full transition-colors active:scale-95">
-                                <span id="mode-pill-label">Быстрый перевод</span>
-                                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                            </button>
-
-                            <!-- Выпадающее меню режимов -->
-                            <div id="mode-dropdown" role="menu" class="hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-[#25272D] border border-white/10 rounded-2xl shadow-2xl py-1.5 z-30">
-                                <button type="button" role="menuitemradio" data-mode="fast" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-white bg-white/10 flex items-center justify-between">
-                                    <span>Быстрый перевод</span>
-                                    <span class="check-mark text-yx-accent shrink-0">✓</span>
-                                </button>
-                                <button type="button" role="menuitemradio" data-mode="essence" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between gap-2">
-                                    <div class="min-w-0">
-                                        <div class="font-semibold text-yx-accent">Передать суть</div>
-                                        <div class="text-[10.5px] text-yx-muted font-normal leading-tight mt-0.5">Без воды и слов-паразитов</div>
-                                    </div>
-                                    <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
-                                </button>
-                                <button type="button" role="menuitemradio" data-mode="casual" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between">
-                                    <span>Разговорный</span>
-                                    <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
-                                </button>
-                                <button type="button" role="menuitemradio" data-mode="formal" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between">
-                                    <span>Деловой</span>
-                                    <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
-                                </button>
-                                <button type="button" role="menuitemradio" data-mode="literal" class="mode-option w-full text-left px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-white/5 flex items-center justify-between">
-                                    <span>Дословный</span>
-                                    <span class="check-mark text-yx-accent hidden shrink-0">✓</span>
-                                </button>
-                            </div>
+                        <div class="shrink-0 flex items-center justify-between pb-1.5">
+                            <span class="text-[11px] font-semibold uppercase tracking-wider text-yx-muted">Недавние</span>
+                            <button id="clear-history-btn" type="button" class="text-xs text-yx-muted hover:text-slate-200 transition-colors hidden">Очистить</button>
                         </div>
-
-                        <!-- Справа: Микрофон (Голосовой ввод) -->
-                        <button id="mic-btn" type="button" title="Голосовой ввод" aria-label="Голосовой ввод" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all">
-                            <svg id="mic-icon" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                            </svg>
-                        </button>
+                        <div id="history-strip" class="flex-1 min-h-0 overflow-y-auto inner-scroll flex flex-col gap-1.5"></div>
                     </div>
-                </section>
+                </div>
 
-                <!-- Нижняя карточка: Результат перевода -->
-                <section id="output-section" class="flex-[1_1_50%] min-h-[68px] bg-gradient-to-b from-[#17191F] to-[#13151A] rounded-3xl border border-yx-accent/15 shadow-xl flex flex-col relative px-4 pt-3.5 pb-2.5 overflow-hidden">
-                    <!-- Верхняя строка языка и статуса загрузки -->
+                <!-- Перевод -->
+                <div id="output-section" class="flex-1 min-h-0 flex flex-col mx-3 mb-3 mt-1 rounded-3xl bg-yx-accent/[0.09] border border-yx-accent/15 px-4 pt-3 pb-2">
                     <div class="flex items-center justify-between h-5 shrink-0 mb-1.5">
-                        <span id="target-lang-hint" class="text-[11px] font-semibold uppercase tracking-wider text-yx-accent/90">
+                        <span id="target-lang-hint" class="text-xs font-semibold text-yx-accent">
                             Вьетнамский
                         </span>
-                        <span id="loading-indicator" class="text-[11px] text-yx-accent flex items-center gap-1.5 opacity-0 transition-opacity">
+                        <span id="loading-indicator" class="text-xs text-yx-accent flex items-center gap-1.5 opacity-0 transition-opacity">
                             <span class="w-1.5 h-1.5 rounded-full bg-yx-accent animate-ping"></span>
                             Перевод...
                         </span>
                     </div>
 
-                    <!-- Область вывода перевода -->
                     <div class="flex-1 min-h-0 overflow-y-auto inner-scroll pr-1 select-text text-left" aria-live="polite">
-                        <p id="target-text" class="text-lg sm:text-2xl font-medium text-white whitespace-pre-wrap leading-snug text-left"><span class="text-[#4B4F58] font-normal select-none">Перевод</span></p>
-                        <!-- Транскрипция / транслитерация -->
+                        <p id="target-text" class="text-[22px] sm:text-[26px] font-normal text-[#D6E4FF] whitespace-pre-wrap leading-snug text-left"><span class="text-[#5B6478] select-none">Перевод</span></p>
                         <p id="translit-text" class="hidden mt-1.5 text-sm text-yx-accent font-normal leading-snug text-left"></p>
-                        <!-- Альтернативные варианты перевода -->
                         <div id="variants-box" class="hidden mt-3 space-y-1.5 select-none"></div>
                     </div>
 
-                    <!-- Нижняя панель действий результата: Озвучить и Копировать -->
-                    <div class="h-8 shrink-0 flex items-center justify-between gap-1 pt-1 border-t border-white/[0.04]">
-                        <button id="variants-btn" type="button" disabled title="Другие варианты перевода" class="h-8 px-2.5 -ml-1.5 rounded-full flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-yx-pill active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div class="h-10 shrink-0 flex items-center justify-between gap-1 pt-1">
+                        <button id="variants-btn" type="button" disabled title="Другие варианты перевода" class="h-9 px-2.5 -ml-1.5 rounded-full flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all disabled:opacity-30 disabled:pointer-events-none">
+                            <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
                             </svg>
-                            <span class="text-xs font-medium">Варианты</span>
+                            <span class="text-[13px] font-medium">Варианты</span>
                         </button>
 
                         <div class="flex items-center gap-0.5">
-                        <button id="fav-btn" type="button" disabled title="В избранное" aria-label="В избранное" aria-pressed="false" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
-                            <svg id="fav-icon" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M11.48 3.5a.56.56 0 011.04 0l2.13 5.11a.56.56 0 00.47.35l5.52.44c.5.04.7.66.32.99l-4.2 3.6a.56.56 0 00-.18.56l1.28 5.39a.56.56 0 01-.84.61l-4.73-2.89a.56.56 0 00-.58 0l-4.73 2.89a.56.56 0 01-.84-.61l1.28-5.39a.56.56 0 00-.18-.56l-4.2-3.6a.56.56 0 01.32-.99l5.52-.44a.56.56 0 00.47-.35l2.13-5.11z" />
-                            </svg>
-                        </button>
-
-                        <button id="slow-btn" type="button" title="Медленная озвучка" aria-label="Медленная озвучка" aria-pressed="false" class="h-8 px-2 rounded-full text-[11px] font-bold text-slate-400 hover:text-white hover:bg-yx-pill active:scale-90 transition-all">0.7×</button>
-
-                        <button id="speak-btn" type="button" disabled title="Прослушать перевод" aria-label="Прослушать перевод" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
-                            <svg id="speak-icon" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                            </svg>
-                        </button>
-
-                        <button id="copy-btn" type="button" disabled title="Копировать перевод" aria-label="Копировать перевод" class="h-8 px-2.5 rounded-full flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-yx-pill active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
-                            <svg id="copy-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                            <span id="copy-label" class="text-xs font-medium hidden">Скопировано</span>
-                        </button>
+                            <button id="fav-btn" type="button" disabled title="В избранное" aria-label="В избранное" aria-pressed="false" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
+                                <svg id="fav-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M11.48 3.5a.56.56 0 011.04 0l2.13 5.11a.56.56 0 00.47.35l5.52.44c.5.04.7.66.32.99l-4.2 3.6a.56.56 0 00-.18.56l1.28 5.39a.56.56 0 01-.84.61l-4.73-2.89a.56.56 0 00-.58 0l-4.73 2.89a.56.56 0 01-.84-.61l1.28-5.39a.56.56 0 00-.18-.56l-4.2-3.6a.56.56 0 01.32-.99l5.52-.44a.56.56 0 00.47-.35l2.13-5.11z" />
+                                </svg>
+                            </button>
+                            <button id="slow-btn" type="button" title="Медленная озвучка" aria-label="Медленная озвучка" aria-pressed="false" class="h-9 px-2 rounded-full text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 active:scale-90 transition-all">0.7×</button>
+                            <button id="speak-btn" type="button" disabled title="Прослушать перевод" aria-label="Прослушать перевод" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
+                                <svg id="speak-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                </svg>
+                            </button>
+                            <button id="copy-btn" type="button" disabled title="Копировать перевод" aria-label="Копировать перевод" class="h-9 px-2.5 rounded-full flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
+                                <svg id="copy-icon" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <span id="copy-label" class="text-xs font-medium hidden">Скопировано</span>
+                            </button>
                         </div>
                     </div>
-                </section>
-            </main>
+                </div>
+            </section>
 
-            <!-- 3. Компактная горизонтальная лента истории внизу (~66px) -->
-            <footer id="history-footer" class="h-[66px] shrink-0 flex flex-col justify-between pt-0.5">
-                <div class="flex items-center justify-between px-1">
-                    <button id="history-open-btn" type="button" title="Вся история и избранное" class="text-xs font-semibold text-slate-300 hover:text-white flex items-center gap-1 transition-colors">
-                        История
-                        <svg class="w-3.5 h-3.5 text-yx-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            <!-- 2. Нижняя панель: языки и главные действия -->
+            <section id="control-panel" class="shrink-0 px-4 pt-4">
+                <div id="lang-header" class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                    <button id="source-lang-btn" type="button" aria-label="Исходный язык" class="h-14 min-w-0 rounded-2xl bg-yx-bg hover:bg-black/60 text-white text-[15px] font-medium px-3 flex items-center justify-center active:scale-[0.97] transition-all">
+                        <span id="source-lang-label" class="truncate">Определить язык</span>
+                    </button>
+                    <button id="swap-btn" type="button" title="Поменять языки местами" aria-label="Поменять языки местами" class="w-11 h-11 rounded-full flex items-center justify-center text-slate-100 hover:bg-white/10 active:scale-90 transition-all">
+                        <svg id="swap-icon" class="w-6 h-6 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                         </svg>
                     </button>
-                    <button id="clear-history-btn" type="button" class="text-[11px] text-yx-muted hover:text-slate-300 transition-colors hidden">
-                        Очистить
+                    <button id="target-lang-btn" type="button" aria-label="Язык перевода" class="h-14 min-w-0 rounded-2xl bg-yx-bg hover:bg-black/60 text-white text-[15px] font-medium px-3 flex items-center justify-center active:scale-[0.97] transition-all">
+                        <span id="target-lang-label" class="truncate">Вьетнамский</span>
                     </button>
                 </div>
 
-                <!-- Горизонтально прокручиваемый список карточек -->
-                <div id="history-strip" class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                    <div class="bg-yx-card/80 border border-white/[0.05] rounded-2xl px-3.5 py-2 text-xs text-yx-muted shrink-0">
-                        Здесь появятся ваши недавние переводы
-                    </div>
+                <div id="action-row" class="grid grid-cols-3 items-center pt-5 pb-1">
+                    <button id="dialog-btn" type="button" aria-label="Режим диалога" class="justify-self-center flex flex-col items-center gap-1.5 text-slate-200 active:scale-95 transition-all">
+                        <span class="w-[52px] h-[52px] rounded-full bg-yx-chip hover:bg-yx-chipHover flex items-center justify-center transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                            </svg>
+                        </span>
+                        <span class="text-xs font-medium">Диалог</span>
+                    </button>
+
+                    <button id="mic-btn" type="button" title="Голосовой ввод" aria-label="Голосовой ввод" class="justify-self-center w-[76px] h-[76px] rounded-full bg-yx-accent text-white flex items-center justify-center shadow-lg active:scale-95 transition-all">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                    </button>
+
+                    <button id="photo-btn" type="button" aria-label="Перевод по фото" class="justify-self-center flex flex-col items-center gap-1.5 text-slate-200 active:scale-95 transition-all">
+                        <span class="w-[52px] h-[52px] rounded-full bg-yx-chip hover:bg-yx-chipHover flex items-center justify-center transition-colors">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </span>
+                        <span class="text-xs font-medium">Камера</span>
+                    </button>
+
+                    <!-- Скрытые input для галереи и системной камеры -->
+                    <input id="photo-input" type="file" accept="image/*" class="hidden">
+                    <input id="camera-capture-input" type="file" accept="image/*" capture="environment" class="hidden">
                 </div>
-            </footer>
+            </section>
 
         </div>
     </div>
@@ -760,11 +740,12 @@
             variantsOpen: false,
             historyFilter: 'all',
             arChipBlock: null,
-            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, flipped: true, essence: false }
+            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, flipped: true, essence: false, typeSide: 'a' }
         };
 
         const els = {
             appRoot: document.getElementById('app-root'),
+            mainSheet: document.getElementById('main-sheet'),
             sourceLangBtn: document.getElementById('source-lang-btn'),
             sourceLangLabel: document.getElementById('source-lang-label'),
             targetLangBtn: document.getElementById('target-lang-btn'),
@@ -838,11 +819,15 @@
             historyTabs: document.querySelectorAll('.history-tab'),
             dialogBtn: document.getElementById('dialog-btn'),
             dialogModal: document.getElementById('dialog-modal'),
-            dialogHalfA: document.getElementById('dialog-half-a'),
-            dialogHalfB: document.getElementById('dialog-half-b'),
+            dialogLog: document.getElementById('dialog-log'),
+            dialogMessages: document.getElementById('dialog-messages'),
+            dialogForm: document.getElementById('dialog-form'),
+            dialogInput: document.getElementById('dialog-input'),
+            dialogTypeSide: document.getElementById('dialog-type-side'),
+            dialogAutoSpeakTrack: document.getElementById('dialog-autospeak-track'),
+            dialogAutoSpeakKnob: document.getElementById('dialog-autospeak-knob'),
             dialogCloseBtn: document.getElementById('dialog-close-btn'),
             dialogAutoSpeakBtn: document.getElementById('dialog-autospeak-btn'),
-            dialogFlipBtn: document.getElementById('dialog-flip-btn'),
             dialogClearBtn: document.getElementById('dialog-clear-btn'),
             dialogEssenceBtn: document.getElementById('dialog-essence-btn'),
             recIndicator: document.getElementById('rec-indicator')
@@ -934,7 +919,7 @@
         const translationKey = (text, src, tgt, mode) => `${src}\u0001${tgt}\u0001${mode}\u0001${text}`;
 
         function langLabel(lang) {
-            return lang === 'auto' ? 'АВТО' : String(lang).toUpperCase();
+            return lang === 'auto' ? 'Определить язык' : String(lang);
         }
 
         function findLanguageObj(langName) {
@@ -1217,8 +1202,8 @@
             els.sourceLangLabel.textContent = langLabel(state.sourceLang);
             els.targetLangLabel.textContent = langLabel(state.targetLang);
             els.targetLangHint.textContent = state.targetLang;
-            els.camSourceLabel.textContent = langLabel(state.sourceLang);
-            els.camTargetLabel.textContent = langLabel(state.targetLang);
+            els.camSourceLabel.textContent = state.sourceLang === 'auto' ? 'Авто' : state.sourceLang;
+            els.camTargetLabel.textContent = state.targetLang;
             storage.set(STORAGE_KEYS.langs, { sourceLang: state.sourceLang, targetLang: state.targetLang });
         }
 
@@ -1371,11 +1356,11 @@
 
             if (vv && vv.offsetTop > 0) window.scrollTo(0, 0);
 
-            const isFocused = document.activeElement === els.sourceText;
             const isShrunk = (baseViewportHeight - currentHeight) > 120;
 
-            // Компактный режим нужен только на сенсорных устройствах с экранной клавиатурой
-            document.body.classList.toggle('keyboard-open', IS_TOUCH && (isFocused || isShrunk));
+            // Компактный режим — только когда клавиатура реально открыта (экран стал ниже).
+            // Просто фокус в поле не считается: клавиатуру могли закрыть кнопкой «назад», а кнопки нужны.
+            document.body.classList.toggle('keyboard-open', IS_TOUCH && isShrunk);
         }
 
         function setupViewportAdapter() {
@@ -1383,9 +1368,14 @@
                 window.visualViewport.addEventListener('resize', syncViewportLayout);
                 window.visualViewport.addEventListener('scroll', syncViewportLayout);
             }
+            let baseWidth = window.innerWidth;
             window.addEventListener('resize', () => {
-                // При повороте экрана сбрасываем «эталонную» высоту
-                baseViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                // «Эталонную» высоту сбрасываем только при повороте (меняется ширина),
+                // а не когда клавиатура сжимает окно — иначе её открытие нельзя заметить
+                if (window.innerWidth !== baseWidth) {
+                    baseWidth = window.innerWidth;
+                    baseViewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                }
                 syncViewportLayout();
             });
             window.addEventListener('orientationchange', () => {
@@ -1396,7 +1386,6 @@
             });
 
             els.sourceText.addEventListener('focus', () => {
-                if (IS_TOUCH) document.body.classList.add('keyboard-open');
                 setTimeout(syncViewportLayout, 60);
                 setTimeout(syncViewportLayout, 250);
             });
@@ -2454,15 +2443,13 @@ ${langHint}
             micMode = mode;
             const on = mode !== 'idle';
             els.micBtn.classList.toggle('bg-rose-600', on);
-            els.micBtn.classList.toggle('text-white', on);
+            els.micBtn.classList.toggle('bg-yx-accent', !on);
             els.micBtn.classList.toggle('mic-listening', mode === 'listening' && mainVoiceEngine !== 'recorder');
             els.micBtn.classList.toggle('opacity-80', mode === 'finishing');
             if (mode !== 'listening') setMicLevel(els.micBtn, null);
-            els.micBtn.classList.toggle('text-slate-300', !on);
-            els.micBtn.classList.toggle('hover:bg-yx-pill', !on);
-            els.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-3.5 h-3.5')
-                : mode === 'finishing' ? spinnerIcon('w-4 h-4')
-                : micIcon('w-[18px] h-[18px]');
+            els.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-7 h-7')
+                : mode === 'finishing' ? spinnerIcon('w-8 h-8')
+                : micIcon('w-8 h-8');
             els.micBtn.setAttribute('aria-pressed', String(on));
             els.micBtn.setAttribute('aria-label', MIC_LABELS[mode]);
             els.micBtn.title = MIC_LABELS[mode];
@@ -2472,6 +2459,7 @@ ${langHint}
             els.detectedBadge.classList.toggle('hidden', on);
             if (mode === 'finishing') els.recIndicator.textContent = '● Распознаю…';
             if (mode === 'listening') startRecTicker();
+            updateClearBtnVisibility(); // во время записи — крупное «Говорите…» вместо «Недавних»
         }
 
         let mainRecorder = null;
@@ -2548,7 +2536,7 @@ ${langHint}
                 speechLang = mainSpeechLanguage();
                 setMicUI('listening');
                 showToast(state.sourceLang === 'auto'
-                    ? `Слушаю: ${speechLang}. Другой язык — выберите вместо «АВТО»`
+                    ? `Слушаю: ${speechLang}. Другой язык — выберите его вместо «Определить язык»`
                     : 'Говорите, паузы не страшны. Нажмите ■, чтобы перевести', 'info');
                 mainDictation.start();
             });
@@ -2868,12 +2856,12 @@ ${langHint}
             );
         }
 
+        /** Недавние переводы под пустым полем ввода */
         function renderHistoryStrip() {
             if (state.history.length === 0) {
                 els.clearHistoryBtn.classList.add('hidden');
                 els.historyStrip.replaceChildren(el('div',
-                    'bg-yx-card/80 border border-white/[0.05] rounded-2xl px-3.5 py-2 text-xs text-yx-muted shrink-0',
-                    'Здесь появятся ваши недавние переводы'));
+                    'text-sm text-yx-muted py-3', 'Здесь появятся ваши переводы'));
                 return;
             }
 
@@ -2881,17 +2869,17 @@ ${langHint}
             const frag = document.createDocumentFragment();
 
             state.history.slice(0, STRIP_LIMIT).forEach((item) => {
-                const card = el('button', 'bg-yx-card hover:bg-yx-pill/80 active:scale-[0.98] border border-white/[0.04] rounded-xl px-3 py-1.5 text-left shrink-0 w-[195px] sm:w-[220px] flex flex-col justify-center transition-all');
+                const card = el('button', 'w-full text-left rounded-2xl bg-white/[0.04] hover:bg-white/[0.07] active:scale-[0.99] px-4 py-2.5 transition-all');
                 card.type = 'button';
                 card.title = `${item.sourceText}\n→ ${item.targetText}`;
-                card.appendChild(el('div', 'text-xs font-medium text-slate-100 truncate w-full', `${item.fav ? '★ ' : ''}${item.targetText}`));
-                card.appendChild(el('div', 'text-[11px] text-yx-muted truncate w-full mt-0.5', item.sourceText));
+                card.appendChild(el('div', 'text-[13px] text-yx-muted truncate', item.sourceText));
+                card.appendChild(el('div', 'text-[15px] text-slate-100 truncate mt-0.5', `${item.fav ? '★ ' : ''}${item.targetText}`));
                 card.addEventListener('click', () => restoreFromHistory(item));
                 frag.appendChild(card);
             });
 
             els.historyStrip.replaceChildren(frag);
-            els.historyStrip.scrollLeft = 0;
+            els.historyStrip.scrollTop = 0;
         }
 
         /* =========================================================
@@ -2921,6 +2909,11 @@ ${langHint}
             const hasText = els.sourceText.value.length > 0;
             els.clearBtn.classList.toggle('opacity-0', !hasText);
             els.clearBtn.classList.toggle('pointer-events-none', !hasText);
+            // Пустое поле — «Вставить» и недавние; есть текст — блок перевода
+            const recording = micMode !== 'idle';
+            els.mainSheet.classList.toggle('has-text', hasText);
+            els.mainSheet.classList.toggle('recording', recording);
+            els.sourceText.placeholder = recording ? 'Говорите…' : 'Введите текст';
         }
 
         /* =========================================================
@@ -3477,10 +3470,21 @@ ${langHint}
         /* =========================================================
          * Режим диалога
          * ========================================================= */
-        const MIC_SVG = micIcon('w-6 h-6');
-        const SEND_SVG = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m0 0l-6-6m6 6l-6 6"/></svg>';
+        const MIC_SVG = micIcon('w-8 h-8');
+        const SPEAKER_SVG = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>';
+        // Цвет стороны: вы — зелёный (слева), собеседник — синий (справа)
+        const DIALOG_SIDE_STYLE = {
+            a: { bubble: 'bg-[#1D3B36]', mic: 'bg-[#1D3B36] text-emerald-300', chip: 'bg-[#1D3B36] text-emerald-200' },
+            b: { bubble: 'bg-[#26334F]', mic: 'bg-[#26334F] text-sky-300', chip: 'bg-[#26334F] text-sky-200' }
+        };
         const dialogUI = { a: null, b: null };
         const isDialogOpen = () => !els.dialogModal.classList.contains('hidden');
+
+        /** Короткий код языка для переключателя «на чьём языке пишу» */
+        function shortLangCode(name) {
+            const obj = findLanguageObj(name);
+            return obj ? obj.bcp47.split('-')[0].toUpperCase() : String(name).slice(0, 2).toUpperCase();
+        }
 
         function saveDialogPrefs() {
             const { a, b, autoSpeak, flipped, essence } = state.dialog;
@@ -3520,133 +3524,136 @@ ${langHint}
                 if (state.dialog.a === state.dialog.b) state.dialog.b = getFallbackLanguage(state.dialog.a);
             }
             state.dialog.log = loadDialogLog();
-            buildDialogHalf(els.dialogHalfA, 'a');
-            buildDialogHalf(els.dialogHalfB, 'b');
+            buildDialogUI();
             syncDialogControls();
         }
 
-        function buildDialogHalf(container, side) {
-            const header = el('div', 'flex items-center justify-between gap-2 shrink-0');
-            const langBtn = el('button', 'disabled:opacity-40 disabled:pointer-events-none h-9 px-3 rounded-xl bg-yx-card border border-white/[0.07] text-white text-xs font-semibold uppercase inline-flex items-center gap-1.5 min-w-0 max-w-[70%] active:scale-95 transition-all');
-            langBtn.type = 'button';
-            const langText = el('span', 'truncate');
-            langBtn.append(langText, el('span', 'text-yx-muted', '▾'));
-            langBtn.addEventListener('click', () => openLanguageModal(side === 'a' ? 'dialogA' : 'dialogB'));
-            const status = el('span', 'text-[11px] text-rose-400 font-semibold truncate');
-            header.append(langBtn, status);
+        function buildDialogUI() {
+            ['a', 'b'].forEach(side => {
+                const micBtn = document.getElementById(`dialog-mic-${side}`);
+                const langBtn = document.getElementById(`dialog-lang-${side}`);
+                const langText = el('span', 'truncate');
+                langBtn.append(langText, el('span', 'text-slate-400 text-xs shrink-0', '▼'));
+                micBtn.innerHTML = MIC_SVG;
+                micBtn.className += ' ' + DIALOG_SIDE_STYLE[side].mic;
+                micBtn.addEventListener('click', () => toggleDialogListening(side));
+                langBtn.addEventListener('click', () => openLanguageModal(side === 'a' ? 'dialogA' : 'dialogB'));
+                // Поле ввода общее: голос дописывается к набранному тексту той стороны, что говорит
+                dialogUI[side] = { micBtn, langBtn, langText, input: els.dialogInput };
+            });
 
-            const log = el('div', 'flex-1 min-h-0 overflow-y-auto inner-scroll flex flex-col gap-2 py-1 select-text');
-
-            const form = el('form', 'flex items-center gap-2 shrink-0');
-            const input = el('input', 'flex-1 min-w-0 h-11 bg-yx-card border border-white/[0.07] rounded-2xl px-3.5 text-sm text-white placeholder-[#5D616B] focus:outline-none focus:ring-1 focus:ring-yx-accent select-text');
-            input.type = 'text';
-            input.autocomplete = 'off';
-            input.enterKeyHint = 'send';
-            input.placeholder = '…';
-            const sendBtn = el('button', 'w-11 h-11 rounded-full bg-yx-pill hover:bg-yx-pillHover text-white flex items-center justify-center active:scale-90 transition-all shrink-0');
-            sendBtn.type = 'submit';
-            sendBtn.setAttribute('aria-label', 'Отправить');
-            sendBtn.innerHTML = SEND_SVG;
-            const micBtn = el('button', 'w-14 h-14 rounded-full bg-yx-accent text-white flex items-center justify-center active:scale-90 transition-all shrink-0 shadow-lg');
-            micBtn.type = 'button';
-            micBtn.setAttribute('aria-label', 'Говорить');
-            micBtn.innerHTML = MIC_SVG;
-            form.append(input, sendBtn, micBtn);
-
-            form.addEventListener('submit', (e) => {
+            els.dialogTypeSide.addEventListener('click', () => {
+                state.dialog.typeSide = state.dialog.typeSide === 'a' ? 'b' : 'a';
+                syncDialogTypeSide();
+            });
+            els.dialogForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                // Во время диктовки кнопка «отправить» просто завершает её — фраза уйдёт один раз
-                if (state.dialog.listeningSide === side) {
-                    toggleDialogListening(side);
+                // Во время записи «отправить» просто завершает её — фраза уйдёт один раз
+                if (state.dialog.listeningSide) {
+                    toggleDialogListening(state.dialog.listeningSide);
                     return;
                 }
-                const text = input.value.trim();
+                const text = els.dialogInput.value.trim();
                 if (!text) return;
-                input.value = '';
-                sendDialogMessage(side, text);
+                els.dialogInput.value = '';
+                sendDialogMessage(state.dialog.typeSide, text);
             });
-            micBtn.addEventListener('click', () => toggleDialogListening(side));
+        }
 
-            container.replaceChildren(header, log, form);
-            dialogUI[side] = { langBtn, langText, status, log, input, micBtn };
+        function syncDialogTypeSide() {
+            const side = state.dialog.typeSide;
+            els.dialogTypeSide.className = `h-11 min-w-[3rem] px-2.5 rounded-2xl text-xs font-bold uppercase shrink-0 transition-colors ${DIALOG_SIDE_STYLE[side].chip}`;
+            els.dialogTypeSide.textContent = shortLangCode(state.dialog[side]);
+            els.dialogTypeSide.setAttribute('aria-label', `Пишу на языке: ${state.dialog[side]}. Нажмите, чтобы сменить`);
         }
 
         function syncDialogControls() {
-            els.dialogHalfB.classList.toggle('dialog-half-flipped', state.dialog.flipped);
-            els.dialogFlipBtn.classList.toggle('text-yx-accent', state.dialog.flipped);
-            els.dialogFlipBtn.setAttribute('aria-pressed', String(state.dialog.flipped));
-            els.dialogAutoSpeakBtn.classList.toggle('text-yx-accent', state.dialog.autoSpeak);
-            els.dialogAutoSpeakBtn.setAttribute('aria-pressed', String(state.dialog.autoSpeak));
-            els.dialogEssenceBtn.classList.toggle('text-yx-accent', state.dialog.essence);
+            const on = state.dialog.autoSpeak;
+            els.dialogAutoSpeakBtn.setAttribute('aria-checked', String(on));
+            els.dialogAutoSpeakTrack.classList.toggle('bg-yx-accent', on);
+            els.dialogAutoSpeakTrack.classList.toggle('bg-white/20', !on);
+            els.dialogAutoSpeakKnob.classList.toggle('translate-x-5', on);
+            els.dialogEssenceBtn.classList.toggle('bg-yx-accent', state.dialog.essence);
+            els.dialogEssenceBtn.classList.toggle('text-white', state.dialog.essence);
+            els.dialogEssenceBtn.classList.toggle('bg-white/[0.06]', !state.dialog.essence);
+            els.dialogEssenceBtn.classList.toggle('text-slate-300', !state.dialog.essence);
             els.dialogEssenceBtn.setAttribute('aria-pressed', String(state.dialog.essence));
         }
 
         const DIALOG_MIC_LABELS = { idle: 'Говорить', listening: 'Остановить и отправить', finishing: 'Распознаю…' };
 
         function renderDialogMicState() {
+            const busy = !!(state.dialog.listeningSide || state.dialog.finishingSide);
             ['a', 'b'].forEach(side => {
                 const ui = dialogUI[side];
                 if (!ui) return;
                 const mode = state.dialog.finishingSide === side ? 'finishing'
                     : state.dialog.listeningSide === side ? 'listening' : 'idle';
+                const sideClasses = DIALOG_SIDE_STYLE[side].mic.split(' ');
                 ui.micBtn.classList.toggle('bg-rose-600', mode !== 'idle');
-                ui.micBtn.classList.toggle('bg-yx-accent', mode === 'idle');
+                ui.micBtn.classList.toggle('text-white', mode !== 'idle');
+                sideClasses.forEach(c => ui.micBtn.classList.toggle(c, mode === 'idle'));
                 ui.micBtn.classList.toggle('mic-listening', mode === 'listening' && dialogVoiceEngine !== 'recorder');
                 ui.micBtn.classList.toggle('opacity-80', mode === 'finishing');
                 if (mode !== 'listening') setMicLevel(ui.micBtn, null);
                 if (ui.micMode !== mode) {
                     ui.micMode = mode;
-                    ui.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-6 h-6')
-                        : mode === 'finishing' ? spinnerIcon('w-6 h-6') : MIC_SVG;
+                    ui.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-7 h-7')
+                        : mode === 'finishing' ? spinnerIcon('w-8 h-8') : MIC_SVG;
                     ui.micBtn.setAttribute('aria-label', DIALOG_MIC_LABELS[mode]);
                 }
-                ui.status.textContent = mode === 'listening' && dialogRecStartedAt
-                    ? `● ${formatDuration(Date.now() - dialogRecStartedAt)}` : '';
-                // Пока кто-то говорит, язык не меняем — иначе распознавание переключится посреди фразы
-                ui.langBtn.disabled = !!(state.dialog.listeningSide || state.dialog.finishingSide);
+                // Во время записи вместо названия языка — таймер; язык менять нельзя, чтобы не сбить распознавание
+                ui.langText.textContent = mode === 'listening' && dialogRecStartedAt
+                    ? `● ${formatDuration(Date.now() - dialogRecStartedAt)}`
+                    : mode === 'finishing' ? 'Распознаю…' : state.dialog[side];
+                ui.langBtn.classList.toggle('text-rose-300', mode === 'listening');
+                ui.langBtn.disabled = busy;
             });
         }
 
-        function renderDialog() {
-            ['a', 'b'].forEach(side => {
-                const ui = dialogUI[side];
-                if (!ui) return;
-                ui.langText.textContent = langLabel(state.dialog[side]);
+        function speakerButton(text, lang) {
+            const btn = el('button', 'w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all');
+            btn.type = 'button';
+            btn.setAttribute('aria-label', 'Прослушать');
+            btn.innerHTML = SPEAKER_SVG;
+            btn.addEventListener('click', () => speakText(text, lang));
+            return btn;
+        }
 
-                const frag = document.createDocumentFragment();
-                const msgs = state.dialog.log;
-                if (!msgs.length) {
-                    frag.appendChild(el('div', 'm-auto text-center text-xs text-yx-muted px-6 leading-relaxed',
-                        side === 'a'
-                            ? 'Нажмите на микрофон и говорите, паузы не страшны. Закончили — нажмите ■, и перевод появится у собеседника'
-                            : '🎤 → 🌐'));
+        function renderDialog() {
+            const msgs = state.dialog.log;
+            const frag = document.createDocumentFragment();
+            if (!msgs.length) {
+                frag.appendChild(el('div', 'text-center text-[15px] text-yx-muted px-6 pt-10 leading-relaxed',
+                    'Нажмите на микрофон своего языка и говорите — паузы не страшны. Закончили — нажмите ■: перевод появится здесь и прозвучит для собеседника.'));
+            }
+            msgs.forEach(m => {
+                const right = m.from === 'b';
+                const toLang = state.dialog[right ? 'a' : 'b'];
+                const wrap = el('div', `flex flex-col ${right ? 'items-end' : 'items-start'} max-w-full`);
+                wrap.appendChild(el('div', `text-[15px] text-slate-400 px-1 mb-1.5 whitespace-pre-wrap break-words max-w-[85%] ${right ? 'text-right' : ''}`, m.original));
+
+                const row = el('div', `flex items-center gap-2 max-w-full ${right ? 'flex-row-reverse' : ''}`);
+                const bubble = el('div', `${DIALOG_SIDE_STYLE[m.from].bubble} rounded-2xl px-4 py-3 text-[20px] leading-snug text-white whitespace-pre-wrap break-words max-w-[80vw] sm:max-w-[28rem]`);
+                if (m.pending) {
+                    bubble.textContent = '…';
+                    bubble.classList.add('animate-pulse');
+                    row.appendChild(bubble);
+                } else if (m.error) {
+                    bubble.textContent = m.error;
+                    bubble.classList.add('text-rose-300', 'text-[15px]');
+                    row.appendChild(bubble);
+                } else {
+                    bubble.textContent = m.translated;
+                    row.append(bubble, speakerButton(m.translated, toLang));
                 }
-                msgs.forEach(m => {
-                    const own = m.from === side;
-                    if (own) {
-                        const bubble = el('div', 'self-end max-w-[85%] bg-white/[0.05] text-slate-300 text-sm rounded-2xl rounded-br-md px-3 py-2 whitespace-pre-wrap break-words', m.original);
-                        if (m.translated) bubble.appendChild(el('div', 'text-[11px] text-yx-muted mt-1', m.translated));
-                        frag.appendChild(bubble);
-                        return;
-                    }
-                    const bubble = el('div', 'self-start max-w-[92%] bg-yx-accent/15 border border-yx-accent/20 text-white text-lg sm:text-xl font-medium rounded-2xl rounded-bl-md px-3.5 py-2.5 whitespace-pre-wrap break-words');
-                    if (m.pending) {
-                        bubble.textContent = '…';
-                        bubble.classList.add('animate-pulse');
-                    } else if (m.error) {
-                        bubble.textContent = m.error;
-                        bubble.classList.add('text-rose-300', 'text-sm');
-                    } else {
-                        bubble.textContent = m.translated;
-                        bubble.classList.add('cursor-pointer');
-                        bubble.title = 'Нажмите, чтобы прослушать';
-                        bubble.addEventListener('click', () => speakText(m.translated, state.dialog[side]));
-                    }
-                    frag.appendChild(bubble);
-                });
-                ui.log.replaceChildren(frag);
-                ui.log.scrollTop = ui.log.scrollHeight;
+                wrap.appendChild(row);
+                frag.appendChild(wrap);
             });
+            els.dialogMessages.replaceChildren(frag);
+            els.dialogClearBtn.parentElement.classList.toggle('hidden', !msgs.length);
+            els.dialogLog.scrollTop = els.dialogLog.scrollHeight;
+            syncDialogTypeSide();
             renderDialogMicState();
         }
 
@@ -4035,11 +4042,6 @@ ${langHint}
             els.dialogAutoSpeakBtn.addEventListener('click', () => {
                 state.dialog.autoSpeak = !state.dialog.autoSpeak;
                 if (!state.dialog.autoSpeak) stopSpeaking();
-                saveDialogPrefs();
-                syncDialogControls();
-            });
-            els.dialogFlipBtn.addEventListener('click', () => {
-                state.dialog.flipped = !state.dialog.flipped;
                 saveDialogPrefs();
                 syncDialogControls();
             });
