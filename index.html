@@ -143,6 +143,26 @@
         /* Микрофон можно зажимать: без прокрутки, системного меню и выделения */
         #mic-btn, #dialog-mic-a, #dialog-mic-b { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
+        /* Телефон боком (по пропорциям, а не orientation — открытая клавиатура в портрете не должна включать этот режим): высоты мало — языки и кнопки собираем в одну строку под текстом,
+           чтобы текст и перевод получили почти весь экран */
+        @media (min-aspect-ratio: 3/2) and (max-height: 520px) {
+            #control-panel { display: flex; align-items: center; gap: 1rem; padding-top: 0.5rem; padding-bottom: 0.5rem; }
+            #lang-header { flex: 1 1 auto; min-width: 0; }
+            #lang-header > button[id$="-lang-btn"] { height: 2.75rem; }
+            #action-row { display: flex; gap: 0.75rem; padding: 0; flex: none; }
+            #action-row [data-i18n] { display: none; }
+            #action-row > button > span { width: 44px; height: 44px; }
+            #mic-btn { width: 56px; height: 56px; }
+
+            /* Диалог боком: шапка ниже, микрофон и язык каждого собеседника — в одну строку */
+            #dialog-modal > header { height: 3rem; }
+            #dialog-modal > header + div { height: 2.5rem; }
+            #dialog-log { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+            #dialog-mics { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+            #dialog-mics > div { flex-direction: row; justify-content: center; }
+            #dialog-mic-a, #dialog-mic-b { width: 52px; height: 52px; flex: none; }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             .mic-listening, .scan-line, .animate-ping, .animate-pulse { animation: none !important; }
         }
