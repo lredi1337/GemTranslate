@@ -2963,8 +2963,11 @@ ${langHint}
                 clearTimeout(debounceTimer);
                 textReq.cancel();
                 setLoading(false);
-                // Запись дописывается к уже набранному тексту
-                mainVoiceBase = els.sourceText.value.trim();
+                // Как в Google: каждая запись — новая фраза. Прошлый текст и перевод убираем
+                // (они уже сохранены в истории), записываем и переводим только сказанное сейчас
+                mainVoiceBase = '';
+                setSourceText('');
+                resetTranslationOutput();
                 // Убираем клавиатуру: она мешает и может перехватить микрофон
                 els.sourceText.blur();
                 mainRecStartedAt = Date.now();
