@@ -67,7 +67,8 @@
         #main-sheet.recording:not(.has-text) #source-text { min-height: 40dvh; }
 
         /* Экранная клавиатура: прячем большие кнопки, оставляем языки */
-        body.keyboard-open #action-row { display: none; }
+        body.keyboard-open #action-row,
+        body.typing #action-row { display: none; }
         body.keyboard-open #control-panel { padding-top: 0.5rem; }
         body.keyboard-open #main-container { padding-bottom: 0.5rem; }
         body.keyboard-open #lang-header button[id$="lang-btn"] { height: 2.75rem; }
@@ -116,7 +117,9 @@
         #dialog-modal.editing #dialog-input { max-height: 45dvh; }
         /* Правим текст или печатаем — микрофоны прячем, чтобы поле и лента поместились над клавиатурой */
         #dialog-modal.editing #dialog-mics,
-        body.keyboard-open #dialog-mics { display: none; }
+        body.keyboard-open #dialog-mics,
+        body.typing #dialog-mics { display: none; }
+        body.typing #dialog-form { padding-bottom: 0.75rem; }
         #dialog-modal.editing #dialog-form,
         body.keyboard-open #dialog-form { padding-bottom: 0.75rem; }
 
@@ -633,7 +636,8 @@
             uiStrings: 'yx_ai_translator_ui_strings'
         };
 
-        const IS_TOUCH = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
+        const IS_TOUCH = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window
+            || (window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false);
 
         // Список поддерживаемых языков мира
         const LANGUAGES = [
@@ -1673,6 +1677,16 @@
             document.body.classList.toggle('keyboard-open', IS_TOUCH && (isShrunk || (typing && muchShorterThanScreen)));
         }
 
+        /** Поле для набора текста (главное, диалог, поиск) — на телефоне при фокусе открыта клавиатура */
+        function isTypingField(node) {
+            return !!node && (node.tagName === 'TEXTAREA' || (node.tagName === 'INPUT' && /^(text|search)$/.test(node.type)));
+        }
+
+        /** Курсор в поле на сенсорном экране = клавиатура открыта: прячем то, что ей мешает */
+        function syncTypingState() {
+            document.body.classList.toggle('typing', IS_TOUCH && isTypingField(document.activeElement));
+        }
+
         function setupViewportAdapter() {
             if (window.visualViewport) {
                 window.visualViewport.addEventListener('resize', syncViewportLayout);
@@ -1700,11 +1714,28 @@
                 setTimeout(syncViewportLayout, 250);
             });
             els.sourceText.addEventListener('blur', () => setTimeout(syncViewportLayout, 120));
-            document.addEventListener('focusin', () => {
+            document.addEventListener('focusin', (e) => {
+                // Включаем сразу, выключаем только с задержкой (см. focusout) — чтобы тап по кнопке не «уехал»
+                if (isTypingField(e.target)) syncTypingState();
                 setTimeout(syncViewportLayout, 80);
                 setTimeout(syncViewportLayout, 350);
             });
-            document.addEventListener('focusout', () => setTimeout(syncViewportLayout, 150));
+            document.addEventListener('focusout', () => {
+                // Панель возвращаем чуть позже: иначе она появится посреди тапа, сдвинет кнопки и тап промахнётся
+                setTimeout(syncTypingState, 250);
+                setTimeout(syncViewportLayout, 150);
+            });
+
+            // Клавиатуру закрыли кнопкой «назад», а курсор остался в поле: окно заметно выросло —
+            // снимаем фокус, чтобы вернулись микрофоны и большие кнопки
+            let lastHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+            const onHeightChange = () => {
+                const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                if (h - lastHeight > 150 && isTypingField(document.activeElement)) document.activeElement.blur();
+                lastHeight = h;
+            };
+            window.visualViewport?.addEventListener('resize', onHeightChange);
+            window.addEventListener('resize', onHeightChange);
 
             syncViewportLayout();
         }
@@ -3988,6 +4019,8 @@ ${langHint}
                 const text = els.dialogInput.value.trim();
                 if (!text) return;
                 els.dialogInput.value = ''; autosizeDialogInput();
+                // Отправили — клавиатуру убираем: дальше обычно отвечает собеседник, микрофоны нужны под рукой
+                els.dialogInput.blur();
                 if (state.dialog.editing) {
                     const msg = state.dialog.editing;
                     endDialogEdit();
