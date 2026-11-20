@@ -126,6 +126,8 @@
 
         /* Тап по кнопке срабатывает сразу, без ожидания двойного тапа */
         button { touch-action: manipulation; }
+        /* Микрофон можно зажимать: без прокрутки, системного меню и выделения */
+        #mic-btn, #dialog-mic-a, #dialog-mic-b { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
         @media (prefers-reduced-motion: reduce) {
             .mic-listening, .scan-line, .animate-ping, .animate-pulse { animation: none !important; }
@@ -2429,6 +2431,46 @@ ${sourceRule}
         }
 
         /** Пульсирующее кольцо вокруг кнопки повторяет громкость голоса — видно, что микрофон вас слышит */
+        const MIC_HOLD_MS = 500;   // дольше — это удержание: отпускание отправляет фразу
+
+        /**
+         * Две манеры на одной кнопке:
+         *  • тап — запись началась, повторный тап — закончить;
+         *  • зажал — запись идёт, пока держишь; отпустил — фраза уходит на перевод.
+         */
+        function bindMicButton(btn, { isIdle, isBusy, start, finish }) {
+            let pressAt = 0;
+            let startedByPress = false;
+            let ignoreClickUntil = 0;
+
+            btn.addEventListener('pointerdown', (e) => {
+                if (e.button || isBusy() || !isIdle()) return;
+                pressAt = Date.now();
+                startedByPress = true;
+                ignoreClickUntil = Infinity; // click после этого касания обработаем здесь сами
+                try { btn.setPointerCapture(e.pointerId); } catch {}
+                start();
+            });
+
+            const release = () => {
+                if (!startedByPress) return;
+                startedByPress = false;
+                ignoreClickUntil = Date.now() + 400;
+                if (Date.now() - pressAt >= MIC_HOLD_MS) finish();
+            };
+            btn.addEventListener('pointerup', release);
+            btn.addEventListener('pointercancel', release);
+
+            // Тап во время записи (и нажатие с клавиатуры) — закончить; с клавиатуры в покое — начать
+            btn.addEventListener('click', () => {
+                if (Date.now() < ignoreClickUntil || isBusy()) return;
+                if (isIdle()) start();
+                else finish();
+            });
+            // Долгое нажатие не должно вызывать системное меню
+            btn.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
         function setMicLevel(btn, level) {
             if (!btn) return;
             btn.style.boxShadow = level == null ? ''
@@ -2522,17 +2564,15 @@ ${langHint}
                 }
             });
 
-            let lastTap = 0;
-            els.micBtn.addEventListener('click', async () => {
-                const now = Date.now();
-                if (now - lastTap < MIC_TAP_GUARD_MS) return;
-                lastTap = now;
-                if (micMode === 'finishing') return; // уже останавливаемся — второй тап не начинает новую запись
-                if (micMode === 'listening') {
-                    finishMainVoice();
-                    return;
-                }
+            bindMicButton(els.micBtn, {
+                isIdle: () => micMode === 'idle',
+                isBusy: () => micMode === 'finishing', // уже останавливаемся — новая запись не начинается
+                start: () => startMainVoice(),
+                finish: () => finishMainVoice()
+            });
 
+            async function startMainVoice() {
+                if (micMode !== 'idle') return;
                 stopSpeaking();
                 clearTimeout(debounceTimer);
                 textReq.cancel();
@@ -2549,7 +2589,7 @@ ${langHint}
                     setMicUI('listening');
                     const res = await mainRecorder.start();
                     if (res.ok) {
-                        showToast('Говорите сколько нужно, паузы не важны. ■ — перевести', 'info');
+                        showToast('Говорите. ■ — перевести, или держите кнопку и отпустите', 'info');
                         return;
                     }
                     if (res.reason === 'cancelled') return;
@@ -2571,7 +2611,7 @@ ${langHint}
                     ? `Слушаю: ${speechLang}. Другой язык — выберите его вместо «Определить язык»`
                     : 'Говорите, паузы не страшны. Нажмите ■, чтобы перевести', 'info');
                 mainDictation.start();
-            });
+            }
         }
 
         /** Второе нажатие (или 5 минут записи): остановить и перевести */
@@ -3575,7 +3615,12 @@ ${langHint}
                 langBtn.append(langText, el('span', 'text-slate-400 text-xs shrink-0', '▼'));
                 micBtn.innerHTML = MIC_SVG;
                 micBtn.className += ' ' + DIALOG_SIDE_STYLE[side].mic;
-                micBtn.addEventListener('click', () => toggleDialogListening(side));
+                bindMicButton(micBtn, {
+                    isIdle: () => state.dialog.listeningSide !== side,
+                    isBusy: () => !!state.dialog.finishingSide,
+                    start: () => toggleDialogListening(side, { force: true }),
+                    finish: () => finishDialogVoice(side)
+                });
                 langBtn.addEventListener('click', () => openLanguageModal(side === 'a' ? 'dialogA' : 'dialogB'));
                 // Поле ввода общее: голос дописывается к набранному тексту той стороны, что говорит
                 dialogUI[side] = { micBtn, langBtn, langText, input: els.dialogInput };
@@ -3585,9 +3630,16 @@ ${langHint}
                 endDialogEdit();
                 els.dialogInput.value = '';
             });
-            els.dialogMenuBackdrop.addEventListener('click', closeDialogMenu);
-            els.dialogMenuBackdrop.addEventListener('contextmenu', (e) => { e.preventDefault(); closeDialogMenu(); });
-            els.dialogLog.addEventListener('scroll', closeDialogMenu, { passive: true });
+            els.dialogMenuBackdrop.addEventListener('click', () => {
+                if (!dialogMenuProtected()) closeDialogMenu();
+            });
+            els.dialogMenuBackdrop.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                if (!dialogMenuProtected()) closeDialogMenu();
+            });
+            els.dialogLog.addEventListener('scroll', () => {
+                if (!dialogMenuProtected()) closeDialogMenu();
+            }, { passive: true });
             els.dialogMenu.addEventListener('click', (e) => {
                 const action = e.target.closest('[data-action]')?.dataset.action;
                 if (action) handleDialogMenuAction(action);
@@ -3675,23 +3727,25 @@ ${langHint}
             let timer = null;
             let start = null;
             let fired = false;
+            let pressed = false;   // палец (кнопка мыши) ещё не отпущен
             const cancel = () => { clearTimeout(timer); timer = null; };
             node.addEventListener('pointerdown', (e) => {
                 fired = false;
+                pressed = true;
                 if (e.button) return;
                 start = { x: e.clientX, y: e.clientY };
                 cancel();
                 timer = setTimeout(() => {
                     fired = true;
                     navigator.vibrate?.(12);
-                    onLong(start.x, start.y);
+                    onLong(start.x, start.y, true);
                 }, 480);
             });
             node.addEventListener('pointermove', (e) => {
                 if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
             });
-            node.addEventListener('pointerup', cancel);
-            node.addEventListener('pointercancel', cancel);
+            node.addEventListener('pointerup', () => { pressed = false; cancel(); });
+            node.addEventListener('pointercancel', () => { pressed = false; cancel(); });
             node.addEventListener('pointerleave', cancel);
             // Android присылает contextmenu на долгое нажатие, компьютер — на правый клик
             node.addEventListener('contextmenu', (e) => {
@@ -3699,7 +3753,7 @@ ${langHint}
                 cancel();
                 if (!fired) {
                     fired = true;
-                    onLong(e.clientX, e.clientY);
+                    onLong(e.clientX, e.clientY, pressed);
                 }
             });
             // Отпускание пальца после меню не должно нажимать «озвучить» под ним
@@ -3790,8 +3844,24 @@ ${langHint}
 
         let dialogMenuTarget = null;   // { msg, node }
 
-        function openDialogMenu(msg, node, x, y) {
+        // Пока палец, открывший меню, лежит на экране (и чуть после), касания фона меню не закрывают:
+        // иначе отпускание пальца засчитывается как тап мимо меню и оно сразу пропадает
+        let dialogMenuHeld = false;
+        let dialogMenuGuardUntil = 0;
+        const releaseDialogMenuHold = () => {
+            if (!dialogMenuHeld) return;
+            dialogMenuHeld = false;
+            dialogMenuGuardUntil = Date.now() + 300;
+        };
+        document.addEventListener('pointerup', releaseDialogMenuHold, true);
+        document.addEventListener('pointercancel', releaseDialogMenuHold, true);
+        document.addEventListener('touchend', releaseDialogMenuHold, { capture: true, passive: true });
+        const dialogMenuProtected = () => dialogMenuHeld || Date.now() < dialogMenuGuardUntil;
+
+        function openDialogMenu(msg, node, x, y, held = false) {
             closeDialogMenu();
+            dialogMenuHeld = held;
+            dialogMenuGuardUntil = Date.now() + 300;
             dialogMenuTarget = { msg, node };
             node.classList.add('scale-[0.98]', 'opacity-80');
             const menu = els.dialogMenu;
@@ -3932,7 +4002,7 @@ ${langHint}
                     row.append(bubble, speakerButton(m.translated, toLang));
                 }
                 wrap.appendChild(row);
-                if (!m.pending) attachLongPress(wrap, (x, y) => openDialogMenu(m, wrap, x, y));
+                if (!m.pending) attachLongPress(wrap, (x, y, held) => openDialogMenu(m, wrap, x, y, held));
                 if (m === state.dialog.editing) wrap.classList.add('opacity-60');
                 frag.appendChild(wrap);
             });
@@ -4078,9 +4148,9 @@ ${langHint}
         /** Нажатие на микрофон: первое — начать говорить, второе — закончить и отправить перевод */
         let lastDialogMicTap = 0;
 
-        async function toggleDialogListening(side) {
+        async function toggleDialogListening(side, { force = false } = {}) {
             const now = Date.now();
-            if (now - lastDialogMicTap < MIC_TAP_GUARD_MS) return;
+            if (!force && now - lastDialogMicTap < MIC_TAP_GUARD_MS) return;
             lastDialogMicTap = now;
             if (state.dialog.finishingSide) return; // предыдущая фраза ещё дозаписывается
 
