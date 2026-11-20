@@ -2997,7 +2997,6 @@ ${langHint}
 
             const previousSource = els.sourceText.value.trim();
             const previousTranslation = state.lastTranslation;
-            const previousDetected = state.detectedLangName;
 
             state.sourceLang = state.targetLang;
             state.targetLang = src;
@@ -3008,12 +3007,10 @@ ${langHint}
 
             // Перевод на экране мог относиться к старой версии текста (пользователь дописывал)
             if (previousTranslation && state.lastSourceText === previousSource) {
-                // Обратный перевод уже известен — кладём его в кэш, чтобы swap был мгновенным
-                translationCache.set(
-                    translationKey(previousTranslation, state.sourceLang, state.targetLang, state.mode),
-                    { translation: previousSource, translit: '', detectedLang: previousDetected }
-                );
+                // Настоящий обратный перевод: перевод уходит в Gemini заново, а не подставляется исходный текст.
+                // Так видно, как фразу поймёт собеседник, и заметны ошибки первого перевода.
                 setSourceText(previousTranslation);
+                resetTranslationOutput(); // старый перевод не висит на экране, пока идёт обратный
                 translateText();
             } else if (previousSource) {
                 translateText();
