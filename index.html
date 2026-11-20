@@ -13,6 +13,7 @@
     <script>
         tailwind.config = {
             darkMode: 'class',
+            future: { hoverOnlyWhenSupported: true },
             theme: {
                 extend: {
                     fontFamily: {
@@ -136,6 +137,11 @@
         @media (min-width: 640px) {
             #dialog-half-b.dialog-half-flipped > form { padding-right: 0; }
         }
+        /* Без разворота шапка собеседника сверху слева — сдвигаем её из-под крестика */
+        #dialog-half-b:not(.dialog-half-flipped) > div:first-child { padding-left: 4rem; }
+        @media (min-width: 640px) {
+            #dialog-half-b:not(.dialog-half-flipped) > div:first-child { padding-left: 0; }
+        }
 
         /* Тап по кнопке срабатывает сразу, без ожидания двойного тапа */
         button { touch-action: manipulation; }
@@ -148,30 +154,30 @@
 <body class="bg-yx-bg text-slate-100 font-sans w-full overflow-hidden select-none">
 
     <!-- Всплывающее уведомление (Toast) -->
-    <div id="toast" role="status" aria-live="polite" class="fixed top-14 left-1/2 -translate-x-1/2 z-[60] transform -translate-y-6 opacity-0 transition-all duration-200 pointer-events-none flex items-center gap-2 bg-[#2B2D31] border border-[#3A3D42] text-white px-3.5 py-2 rounded-full shadow-2xl text-xs font-medium whitespace-nowrap max-w-[92vw]">
+    <div id="toast" role="status" aria-live="polite" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] transform -translate-y-6 opacity-0 transition-all duration-200 pointer-events-none flex items-center gap-2 bg-[#2B2D31] border border-[#3A3D42] text-white px-3.5 py-2 rounded-full shadow-2xl text-xs font-medium whitespace-nowrap max-w-[92vw]">
         <span id="toast-icon" class="w-2 h-2 rounded-full bg-blue-400 inline-block shrink-0"></span>
         <span id="toast-message" class="truncate">Сообщение</span>
     </div>
 
     <!-- Модальное окно живой камеры и фотоперевода с AR-наложением -->
-    <div id="camera-modal" role="dialog" aria-modal="true" aria-label="Перевод по фото" class="hidden fixed inset-0 z-50 bg-black flex flex-col overflow-hidden select-none pt-12 sm:pt-0">
-        <!-- Верхняя панель камеры -->
-        <div class="h-14 px-3 bg-black/90 backdrop-blur-md flex items-center justify-between border-b border-white/10 shrink-0 z-20">
-            <button id="camera-close-btn" type="button" class="w-10 h-10 rounded-full flex items-center justify-center text-white bg-white/5 hover:bg-white/15 active:scale-90 transition-all" title="Закрыть камеру" aria-label="Закрыть камеру">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-            </button>
-
-            <div class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-white bg-white/10 px-3 py-1.5 rounded-full max-w-[68%]">
+    <div id="camera-modal" role="dialog" aria-modal="true" aria-label="Перевод по фото" class="hidden fixed inset-0 z-50 bg-black flex flex-col overflow-hidden select-none">
+        <!-- Верхняя панель камеры: слева пусто под системный крестик, своя кнопка закрытия справа -->
+        <div class="h-14 pl-20 pr-3 sm:pl-3 bg-black/90 backdrop-blur-md flex items-center gap-2 border-b border-white/10 shrink-0 z-20">
+            <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase text-white bg-white/10 px-3 py-1.5 rounded-full min-w-0 mr-auto">
                 <span id="cam-source-label" class="truncate">АВТО</span>
                 <span class="text-yx-accent">→</span>
                 <span id="cam-target-label" class="truncate text-yx-accent">ВЬЕТНАМСКИЙ</span>
             </div>
 
             <!-- Переключатель «Перевод / Оригинал» после съёмки -->
-            <button id="cam-toggle-overlay-btn" type="button" class="px-2.5 py-1.5 rounded-full text-[11px] font-semibold bg-yx-accent text-white opacity-0 pointer-events-none transition-all active:scale-95">
+            <button id="cam-toggle-overlay-btn" type="button" class="hidden shrink-0 px-2.5 py-1.5 rounded-full text-[11px] font-semibold bg-yx-accent text-white transition-all active:scale-95">
                 Оригинал
+            </button>
+
+            <button id="camera-close-btn" type="button" class="shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-white bg-white/5 hover:bg-white/15 active:scale-90 transition-all" title="Закрыть камеру" aria-label="Закрыть камеру">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
             </button>
         </div>
 
@@ -181,7 +187,7 @@
             <video id="camera-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
 
             <!-- Фонарик (показывается, только если камера его поддерживает) -->
-            <button id="cam-torch-btn" type="button" title="Фонарик" aria-label="Фонарик" aria-pressed="false" class="hidden absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-black/50 border border-white/15 text-white flex items-center justify-center active:scale-90 transition-all">
+            <button id="cam-torch-btn" type="button" title="Фонарик" aria-label="Фонарик" aria-pressed="false" class="hidden absolute top-4 right-3 z-10 w-10 h-10 rounded-full bg-black/50 border border-white/15 text-white flex items-center justify-center active:scale-90 transition-all">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
@@ -212,7 +218,7 @@
 
             <!-- Слой с захваченным кадром и AR-блоками перевода поверх текста -->
             <div id="captured-wrapper" class="hidden relative max-w-full max-h-full flex items-center justify-center">
-                <img id="captured-img" alt="Снимок для перевода" class="max-w-full max-h-[calc(100dvh-144px)] w-auto h-auto block select-none">
+                <img id="captured-img" alt="Снимок для перевода" class="max-w-full max-h-[calc(100dvh-152px)] w-auto h-auto block select-none">
                 <!-- Слой наложения переведенного текста строго по координатам оригинала -->
                 <div id="ar-overlay-layer" class="absolute inset-0 overflow-hidden transition-opacity duration-200"></div>
                 <!-- Анимация сканирования во время распознавания -->
@@ -342,7 +348,12 @@
             <div class="flex items-center gap-0.5 min-w-0">
                 <button id="dialog-autospeak-btn" type="button" aria-pressed="true" title="Автоматически озвучивать перевод" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-300 hover:bg-white/10 transition-colors">Озвучка</button>
                 <button id="dialog-flip-btn" type="button" aria-pressed="true" title="Развернуть верхнюю половину к собеседнику" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-300 hover:bg-white/10 transition-colors">Лицом к лицу</button>
-                <button id="dialog-clear-btn" type="button" title="Очистить диалог" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-yx-muted hover:text-white hover:bg-white/10 transition-colors">Очистить</button>
+                <button id="dialog-essence-btn" type="button" aria-pressed="false" title="Передавать суть: без слов-паразитов, повторов и воды" class="h-8 px-2.5 rounded-full text-[11px] font-semibold text-slate-300 hover:bg-white/10 transition-colors">Суть</button>
+                <button id="dialog-clear-btn" type="button" title="Очистить диалог" aria-label="Очистить диалог" class="w-8 h-8 rounded-full flex items-center justify-center text-yx-muted hover:text-white hover:bg-white/10 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                </button>
             </div>
         </div>
 
@@ -357,7 +368,7 @@
         <div id="main-container" class="max-w-2xl w-full h-full mx-auto px-3.5 flex flex-col gap-2.5 overflow-hidden transition-all duration-150">
 
             <!-- 1. Верхняя панель выбора языков с безопасной зоной под системный кружок закрытия -->
-            <header id="lang-header" class="h-12 shrink-0 flex items-center pl-14 pr-0.5 sm:px-0 transition-all duration-150">
+            <header id="lang-header" class="h-12 shrink-0 flex items-center pl-16 pr-0.5 sm:px-0 transition-all duration-150">
                 <div class="w-full h-11 bg-yx-card/95 border border-white/[0.07] rounded-2xl grid grid-cols-[minmax(0,0.8fr)_30px_minmax(0,1.2fr)] items-center px-1 shadow-lg">
                     <!-- Левый язык (Исходный) -->
                     <button id="source-lang-btn" type="button" aria-label="Исходный язык" class="h-9 w-full inline-flex items-center justify-center gap-1 text-white text-[10.5px] sm:text-xs font-semibold uppercase tracking-normal px-1 rounded-xl hover:bg-white/[0.06] active:scale-95 transition-all min-w-0">
@@ -391,6 +402,7 @@
                 <section id="input-section" class="flex-[1_1_50%] min-h-[76px] bg-yx-card rounded-3xl border border-white/[0.07] shadow-xl flex flex-col relative px-4 pt-3 pb-2.5 overflow-hidden">
                     <!-- Бейдж автоопределения и кнопка очистки '×' -->
                     <div class="flex items-center justify-between h-5 shrink-0 mb-1">
+                        <span id="rec-indicator" class="hidden text-[11px] font-semibold text-rose-400 tabular-nums truncate" aria-live="polite">● 0:00</span>
                         <span id="detected-badge" class="text-[11px] font-medium text-yx-accent opacity-0 transition-opacity truncate">
                             Определен: —
                         </span>
@@ -594,7 +606,8 @@
             history: 'yx_ai_translator_history',
             recent: 'yx_ai_translator_recent_langs',
             prefs: 'yx_ai_translator_prefs',
-            dialog: 'yx_ai_translator_dialog'
+            dialog: 'yx_ai_translator_dialog',
+            dialogLog: 'yx_ai_translator_dialog_log'
         };
 
         const IS_TOUCH = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
@@ -730,6 +743,7 @@
             lastTranslation: '',
             lastTranslit: '',
             detectedLangName: '',
+            lastSourceText: '',      // текст, к которому относится показанный перевод
             history: [],
             modalPickerSide: null,
             cameraStream: null,
@@ -746,7 +760,7 @@
             variantsOpen: false,
             historyFilter: 'all',
             arChipBlock: null,
-            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, flipped: true }
+            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, flipped: true, essence: false }
         };
 
         const els = {
@@ -829,7 +843,9 @@
             dialogCloseBtn: document.getElementById('dialog-close-btn'),
             dialogAutoSpeakBtn: document.getElementById('dialog-autospeak-btn'),
             dialogFlipBtn: document.getElementById('dialog-flip-btn'),
-            dialogClearBtn: document.getElementById('dialog-clear-btn')
+            dialogClearBtn: document.getElementById('dialog-clear-btn'),
+            dialogEssenceBtn: document.getElementById('dialog-essence-btn'),
+            recIndicator: document.getElementById('rec-indicator')
         };
 
         let debounceTimer = null;
@@ -990,7 +1006,8 @@
                     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
                     // Модель не поддерживает thinkingConfig — убираем его и сразу повторяем
-                    if (err instanceof HttpError && err.status === 400 && body.generationConfig?.thinkingConfig) {
+                    if (err instanceof HttpError && err.status === 400 && body.generationConfig?.thinkingConfig
+                        && /thinking/i.test(err.message)) {
                         state.thinkingSupported = false;
                         body = stripThinking(body);
                         continue;
@@ -1069,7 +1086,9 @@
                 if (!res.ok) {
                     let detail = '';
                     try { detail = (await res.json())?.error?.message || ''; } catch {}
-                    if (res.status === 400 && body.generationConfig?.thinkingConfig) state.thinkingSupported = false;
+                    if (res.status === 400 && body.generationConfig?.thinkingConfig && /thinking/i.test(detail)) {
+                        state.thinkingSupported = false;
+                    }
                     throw new HttpError(res.status, detail);
                 }
                 if (!res.body?.getReader) throw new Error('no-stream');
@@ -1488,8 +1507,11 @@
             els.cameraFallbackMsg.classList.remove('hidden');
         }
 
+        let cameraStartSeq = 0;
+
         async function startLiveCameraStream() {
             stopLiveCameraStream();
+            const seq = ++cameraStartSeq;
             els.cameraFallbackMsg.classList.add('hidden');
             els.cameraVideo.classList.remove('hidden');
 
@@ -1508,7 +1530,8 @@
                     audio: false
                 });
                 // Пользователь мог закрыть камеру или уже выбрать фото, пока ждали разрешения
-                if (!isCameraOpen() || !isLiveView()) {
+                // Пока ждали разрешения: камеру закрыли, выбрали фото или нажали «Новый снимок» ещё раз
+                if (seq !== cameraStartSeq || !isCameraOpen() || !isLiveView() || document.hidden) {
                     stream.getTracks().forEach(t => t.stop());
                     return;
                 }
@@ -1517,11 +1540,12 @@
                 await els.cameraVideo.play();
                 updateTorchAvailability();
             } catch {
-                showCameraFallback();
+                if (seq === cameraStartSeq && isCameraOpen() && isLiveView()) showCameraFallback();
             }
         }
 
         function stopLiveCameraStream() {
+            cameraStartSeq++; // отменяет запуск, который ещё ждёт разрешения
             if (state.cameraStream) {
                 state.cameraStream.getTracks().forEach(track => track.stop());
                 state.cameraStream = null;
@@ -1560,7 +1584,7 @@
             els.camRetakeBtn.classList.add('hidden');
             els.camRetakeBtn.classList.remove('inline-flex');
             els.camApplyBtn.disabled = true;
-            els.camToggleOverlayBtn.classList.add('opacity-0', 'pointer-events-none');
+            els.camToggleOverlayBtn.classList.add('hidden');
             els.camToggleOverlayBtn.textContent = 'Оригинал';
         }
 
@@ -1737,7 +1761,7 @@ ${sourceRule}
             els.camRetakeBtn.classList.remove('hidden');
             els.camRetakeBtn.classList.add('inline-flex');
             els.camApplyBtn.disabled = true;
-            els.camToggleOverlayBtn.classList.add('opacity-0', 'pointer-events-none');
+            els.camToggleOverlayBtn.classList.add('hidden');
             els.camToggleOverlayBtn.textContent = 'Оригинал';
             state.showOriginalPhoto = false;
         }
@@ -1789,7 +1813,7 @@ ${sourceRule}
                 }
 
                 els.camApplyBtn.disabled = false;
-                els.camToggleOverlayBtn.classList.remove('opacity-0', 'pointer-events-none');
+                els.camToggleOverlayBtn.classList.remove('hidden');
                 showToast(`Переведено блоков: ${blocks.length}`, 'success');
             } catch (err) {
                 if (!photoReq.isCurrent(id) || isAbort(err)) return;
@@ -1868,7 +1892,7 @@ ${sourceRule}
             const { sourceLang, targetLang, mode } = state;
             const key = translationKey(text, sourceLang, targetLang, mode);
             const commit = (data) => {
-                renderTranslation(data.translation, data.translit, data.detectedLang);
+                renderTranslation(data.translation, data.translit, data.detectedLang, text);
                 saveToHistory({
                     sourceText: text, targetText: data.translation, translit: data.translit,
                     sourceLang: sourceLang === 'auto' && data.detectedLang ? data.detectedLang : sourceLang,
@@ -1963,9 +1987,10 @@ ${sourceRule}
             els.targetText.textContent = value;
         }
 
-        function renderTranslation(translation, translit, detectedLang) {
+        function renderTranslation(translation, translit, detectedLang, sourceText = els.sourceText.value.trim()) {
             stopSpeaking();
             hideVariants();
+            state.lastSourceText = sourceText;
             state.lastTranslation = translation;
             state.lastTranslit = translit;
             state.detectedLangName = detectedLang || '';
@@ -1992,6 +2017,7 @@ ${sourceRule}
             stopSpeaking();
             state.lastTranslation = '';
             state.lastTranslit = '';
+            state.lastSourceText = '';
             state.detectedLangName = '';
             setLoading(false);
             els.targetText.replaceChildren(el('span', 'text-[#4B4F58] font-normal select-none', 'Перевод'));
@@ -2175,6 +2201,61 @@ ${sourceRule}
             finishing: 'Распознаю последние слова…'
         };
 
+        // Таймер записи: и на главном экране, и в диалоге
+        let mainRecStartedAt = 0;
+        let dialogRecStartedAt = 0;
+        let recTickTimer = null;
+
+        function formatDuration(ms) {
+            const sec = Math.max(0, Math.floor(ms / 1000));
+            return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+        }
+
+        function renderRecTimers() {
+            const now = Date.now();
+            let running = false;
+            if (micMode === 'listening' && mainRecStartedAt) {
+                els.recIndicator.textContent = `● Запись ${formatDuration(now - mainRecStartedAt)}`;
+                running = true;
+            }
+            if (state.dialog.listeningSide && !state.dialog.finishingSide && dialogRecStartedAt) {
+                renderDialogMicState();
+                running = true;
+            }
+            if (!running && recTickTimer) {
+                clearInterval(recTickTimer);
+                recTickTimer = null;
+            }
+        }
+
+        function startRecTicker() {
+            if (!recTickTimer) recTickTimer = setInterval(renderRecTimers, 500);
+            renderRecTimers();
+        }
+
+        /** Язык телефона в виде названия из списка (для голосового ввода при «АВТО») */
+        function phoneLanguageName() {
+            const tag = (navigator.language || 'ru-RU').toLowerCase();
+            const base = tag.split('-')[0];
+            const found = LANGUAGES.find(l => l.bcp47.toLowerCase() === tag)
+                || LANGUAGES.find(l => l.bcp47.toLowerCase().split('-')[0] === base);
+            return found ? found.name : 'Русский';
+        }
+
+        /**
+         * Распознаванию речи нужен язык заранее. При «АВТО» берём последний определённый язык,
+         * затем исходный язык из истории, затем язык телефона — и всегда говорим пользователю, какой выбран.
+         */
+        function mainSpeechLanguage() {
+            if (state.sourceLang !== 'auto') return state.sourceLang;
+            const candidates = [state.detectedLangName, ...state.history.map(h => h.sourceLang), phoneLanguageName()];
+            for (const c of candidates) {
+                const obj = findLanguageObj(c);
+                if (obj && obj.name !== state.targetLang) return obj.name;
+            }
+            return phoneLanguageName();
+        }
+
         /** Микрофон → квадрат «стоп» во время записи → крутилка, пока дорабатываются последние слова */
         function setMicUI(mode) {
             micMode = mode;
@@ -2191,6 +2272,12 @@ ${sourceRule}
             els.micBtn.setAttribute('aria-pressed', String(on));
             els.micBtn.setAttribute('aria-label', MIC_LABELS[mode]);
             els.micBtn.title = MIC_LABELS[mode];
+
+            // Вместо «Определён: …» показываем, что идёт запись и сколько она длится
+            els.recIndicator.classList.toggle('hidden', !on);
+            els.detectedBadge.classList.toggle('hidden', on);
+            if (mode === 'finishing') els.recIndicator.textContent = '● Распознаю…';
+            if (mode === 'listening') startRecTicker();
         }
 
         function setupVoiceInput() {
@@ -2202,8 +2289,9 @@ ${sourceRule}
             }
 
             let baseText = '';
+            let speechLang = 'Русский';
             mainDictation = createDictation({
-                getLang: () => speechLangFor(state.sourceLang === 'auto' ? state.detectedLangName : state.sourceLang),
+                getLang: () => speechLangFor(speechLang),
                 onText: (spoken) => setSourceText(joinSpeech(baseText, spoken)),
                 onStop: ({ cancelled, error }) => {
                     state.isListening = false;
@@ -2235,9 +2323,13 @@ ${sourceRule}
                 baseText = els.sourceText.value.trim();
                 // Убираем клавиатуру: она мешает и может перехватить микрофон
                 els.sourceText.blur();
+                speechLang = mainSpeechLanguage();
                 state.isListening = true;
+                mainRecStartedAt = Date.now();
                 setMicUI('listening');
-                showToast('Говорите, паузы не страшны. Нажмите ■, чтобы перевести', 'info');
+                showToast(state.sourceLang === 'auto'
+                    ? `Слушаю: ${speechLang}. Другой язык — выберите вместо «АВТО»`
+                    : 'Говорите, паузы не страшны. Нажмите ■, чтобы перевести', 'info');
                 mainDictation.start();
             });
         }
@@ -2274,11 +2366,38 @@ ${sourceRule}
             return new Blob([wavBuffer], { type: 'audio/wav' });
         }
 
-        function setSpeakingUI(speaking) {
+        let speakingFromMain = false;
+
+        /** Кнопка озвучки на главном экране подсвечивается только для своей озвучки, а не для диалога или фото */
+        function setSpeakingUI(speaking, fromMain = speakingFromMain) {
             state.isSpeaking = speaking;
-            els.speakBtn.classList.toggle('text-yx-accent', speaking);
-            els.speakBtn.classList.toggle('animate-pulse', speaking);
-            els.speakBtn.setAttribute('aria-pressed', String(speaking));
+            speakingFromMain = speaking && fromMain;
+            els.speakBtn.classList.toggle('text-yx-accent', speakingFromMain);
+            els.speakBtn.classList.toggle('animate-pulse', speakingFromMain);
+            els.speakBtn.setAttribute('aria-pressed', String(speakingFromMain));
+        }
+
+        // iOS разрешает звук только если плеер был запущен прямо из касания. Перевод приходит позже,
+        // поэтому при первом касании «разогреваем» общий плеер тишиной и дальше играем через него.
+        const audioPlayer = new Audio();
+        let audioUnlocked = false;
+
+        function unlockAudio() {
+            if (audioUnlocked) return;
+            audioUnlocked = true;
+            try {
+                if (!audioPlayer.src) {
+                    audioPlayer.src = URL.createObjectURL(pcm16ToWavBlob(btoa('\0'.repeat(2400)), 24000));
+                }
+                audioPlayer.play()?.catch(() => { audioUnlocked = false; });
+            } catch { audioUnlocked = false; }
+            try {
+                if ('speechSynthesis' in window) {
+                    const u = new SpeechSynthesisUtterance(' ');
+                    u.volume = 0;
+                    window.speechSynthesis.speak(u);
+                }
+            } catch {}
         }
 
         /** Полная остановка: отменяет и загрузку TTS, и воспроизведение */
@@ -2287,7 +2406,7 @@ ${sourceRule}
             if (currentAudioEl) {
                 currentAudioEl.onended = null;
                 currentAudioEl.onerror = null;
-                currentAudioEl.pause();
+                try { currentAudioEl.pause(); } catch {}
                 currentAudioEl = null;
             }
             if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -2295,7 +2414,10 @@ ${sourceRule}
         }
 
         async function playAudioUrl(url, id) {
-            const audio = new Audio(url);
+            const audio = audioPlayer;
+            audio.onended = null;
+            audio.onerror = null;
+            audio.src = url;
             currentAudioEl = audio;
             const done = () => {
                 if (currentAudioEl === audio) currentAudioEl = null;
@@ -2328,15 +2450,15 @@ ${sourceRule}
                 stopSpeaking();
                 return;
             }
-            speakText(state.lastTranslation, state.targetLang);
+            speakText(state.lastTranslation, state.targetLang, { fromMain: true });
         }
 
         /** Озвучка любого текста на указанном языке (основной экран, фото, диалог) */
-        async function speakText(text, lang) {
+        async function speakText(text, lang, { fromMain = false } = {}) {
             stopSpeaking();
             if (!text) return;
 
-            setSpeakingUI(true);
+            setSpeakingUI(true, fromMain);
             const { id, signal } = ttsReq.begin();
             const slow = state.slowSpeech;
             const textToSpeak = text.slice(0, MAX_TTS_CHARS);
@@ -2441,7 +2563,13 @@ ${sourceRule}
 
             setSourceText(item.sourceText);
             if (item.targetLang) state.targetLang = item.targetLang;
-            if (item.mode && modesConfig[item.mode]) applySelectedMode(item.mode);
+            if (state.sourceLang !== 'auto' && state.sourceLang === state.targetLang) {
+                state.sourceLang = item.sourceLang && item.sourceLang !== state.targetLang ? item.sourceLang : 'auto';
+            }
+            if (item.mode && modesConfig[item.mode]) {
+                applySelectedMode(item.mode);
+                storage.set(STORAGE_KEYS.mode, item.mode);
+            }
             syncLanguageUI();
 
             const translit = item.translit || item.pinyin || '';
@@ -2534,7 +2662,8 @@ ${sourceRule}
             els.swapIcon.classList.toggle('rotate-180');
             els.detectedBadge.classList.add('opacity-0');
 
-            if (previousTranslation) {
+            // Перевод на экране мог относиться к старой версии текста (пользователь дописывал)
+            if (previousTranslation && state.lastSourceText === previousSource) {
                 // Обратный перевод уже известен — кладём его в кэш, чтобы swap был мгновенным
                 translationCache.set(
                     translationKey(previousTranslation, state.sourceLang, state.targetLang, state.mode),
@@ -2748,6 +2877,10 @@ ${sourceRule}
             // Escape закрывает верхний открытый слой
             document.addEventListener('keydown', (e) => {
                 if (e.key !== 'Escape') return;
+                if (e.target.matches?.('#dialog-modal input, #lang-search-input, #history-search') && e.target.value) {
+                    e.target.blur();
+                    return;
+                }
                 if (!els.modeDropdown.classList.contains('hidden')) setModeDropdown(false);
                 else if (!els.langModal.classList.contains('hidden')) closeLanguageModal();
                 else if (!els.historyModal.classList.contains('hidden')) closeHistoryModal();
@@ -2887,6 +3020,10 @@ ${sourceRule}
             hideVariants();
             state.lastTranslation = text;
             state.lastTranslit = '';
+            const source = els.sourceText.value.trim();
+            state.lastSourceText = source;
+            translationCache.set(translationKey(source, state.sourceLang, state.targetLang, state.mode),
+                { translation: text, translit: '', detectedLang: state.detectedLangName });
             els.targetText.textContent = text;
             els.translitText.textContent = '';
             els.translitText.classList.add('hidden');
@@ -3055,8 +3192,27 @@ ${sourceRule}
         const isDialogOpen = () => !els.dialogModal.classList.contains('hidden');
 
         function saveDialogPrefs() {
-            const { a, b, autoSpeak, flipped } = state.dialog;
-            storage.set(STORAGE_KEYS.dialog, { a, b, autoSpeak, flipped });
+            const { a, b, autoSpeak, flipped, essence } = state.dialog;
+            storage.set(STORAGE_KEYS.dialog, { a, b, autoSpeak, flipped, essence });
+        }
+
+        /** Разговор переживает перезагрузку страницы (без незавершённых сообщений) */
+        function saveDialogLog() {
+            const log = state.dialog.log
+                .filter(m => !m.pending)
+                .slice(-DIALOG_LOG_LIMIT)
+                .map(({ from, original, translated, error }) => ({ from, original, translated, error }));
+            if (log.length) storage.set(STORAGE_KEYS.dialogLog, log);
+            else storage.remove(STORAGE_KEYS.dialogLog);
+        }
+
+        function loadDialogLog() {
+            const saved = storage.get(STORAGE_KEYS.dialogLog, []);
+            if (!Array.isArray(saved)) return [];
+            return saved
+                .filter(m => m && (m.from === 'a' || m.from === 'b') && typeof m.original === 'string')
+                .map(m => ({ from: m.from, original: m.original, translated: String(m.translated || ''), error: String(m.error || ''), pending: false }))
+                .slice(-DIALOG_LOG_LIMIT);
         }
 
         function initDialog() {
@@ -3066,11 +3222,13 @@ ${sourceRule}
                 state.dialog.b = saved.b;
                 state.dialog.autoSpeak = saved.autoSpeak !== false;
                 state.dialog.flipped = saved.flipped !== false;
+                state.dialog.essence = saved.essence === true;
             } else {
                 state.dialog.a = state.sourceLang === 'auto' ? 'Русский' : state.sourceLang;
                 state.dialog.b = state.targetLang;
                 if (state.dialog.a === state.dialog.b) state.dialog.b = getFallbackLanguage(state.dialog.a);
             }
+            state.dialog.log = loadDialogLog();
             buildDialogHalf(els.dialogHalfA, 'a');
             buildDialogHalf(els.dialogHalfB, 'b');
             syncDialogControls();
@@ -3078,7 +3236,7 @@ ${sourceRule}
 
         function buildDialogHalf(container, side) {
             const header = el('div', 'flex items-center justify-between gap-2 shrink-0');
-            const langBtn = el('button', 'h-9 px-3 rounded-xl bg-yx-card border border-white/[0.07] text-white text-xs font-semibold uppercase inline-flex items-center gap-1.5 min-w-0 max-w-[70%] active:scale-95 transition-all');
+            const langBtn = el('button', 'disabled:opacity-40 disabled:pointer-events-none h-9 px-3 rounded-xl bg-yx-card border border-white/[0.07] text-white text-xs font-semibold uppercase inline-flex items-center gap-1.5 min-w-0 max-w-[70%] active:scale-95 transition-all');
             langBtn.type = 'button';
             const langText = el('span', 'truncate');
             langBtn.append(langText, el('span', 'text-yx-muted', '▾'));
@@ -3119,7 +3277,7 @@ ${sourceRule}
             micBtn.addEventListener('click', () => toggleDialogListening(side));
 
             container.replaceChildren(header, log, form);
-            dialogUI[side] = { langText, status, log, input, micBtn };
+            dialogUI[side] = { langBtn, langText, status, log, input, micBtn };
         }
 
         function syncDialogControls() {
@@ -3128,6 +3286,8 @@ ${sourceRule}
             els.dialogFlipBtn.setAttribute('aria-pressed', String(state.dialog.flipped));
             els.dialogAutoSpeakBtn.classList.toggle('text-yx-accent', state.dialog.autoSpeak);
             els.dialogAutoSpeakBtn.setAttribute('aria-pressed', String(state.dialog.autoSpeak));
+            els.dialogEssenceBtn.classList.toggle('text-yx-accent', state.dialog.essence);
+            els.dialogEssenceBtn.setAttribute('aria-pressed', String(state.dialog.essence));
         }
 
         const DIALOG_MIC_LABELS = { idle: 'Говорить', listening: 'Остановить и отправить', finishing: 'Распознаю…' };
@@ -3148,7 +3308,10 @@ ${sourceRule}
                         : mode === 'finishing' ? spinnerIcon('w-6 h-6') : MIC_SVG;
                     ui.micBtn.setAttribute('aria-label', DIALOG_MIC_LABELS[mode]);
                 }
-                ui.status.textContent = mode === 'listening' ? '● REC' : '';
+                ui.status.textContent = mode === 'listening' && dialogRecStartedAt
+                    ? `● ${formatDuration(Date.now() - dialogRecStartedAt)}` : '';
+                // Пока кто-то говорит, язык не меняем — иначе распознавание переключится посреди фразы
+                ui.langBtn.disabled = !!(state.dialog.listeningSide || state.dialog.finishingSide);
             });
         }
 
@@ -3200,13 +3363,14 @@ ${sourceRule}
             const from = state.dialog[side];
             const to = state.dialog[other];
             const signal = dialogAbort?.signal;
+            const mode = state.dialog.essence ? 'essence' : 'fast'; // у диалога свой стиль, не зависит от главного экрана
             const msg = { from: side, original: text, translated: '', pending: true, error: '' };
             state.dialog.log.push(msg);
             state.dialog.log = state.dialog.log.slice(-DIALOG_LOG_LIMIT);
             renderDialog();
 
             try {
-                const data = await fetchTranslation(text, from, to, state.mode, { signal });
+                const data = await fetchTranslation(text, from, to, mode, { signal });
                 msg.translated = data.translation;
             } catch (err) {
                 msg.error = isAbort(err) ? 'Перевод отменён' : describeError(err);
@@ -3214,6 +3378,7 @@ ${sourceRule}
                 msg.pending = false;
             }
 
+            saveDialogLog();
             if (signal?.aborted) return;
             renderDialog();
             if (msg.translated && state.dialog.autoSpeak) speakText(msg.translated, to);
@@ -3279,7 +3444,9 @@ ${sourceRule}
 
             dialogRecognizer = dictation;
             state.dialog.listeningSide = side;
+            dialogRecStartedAt = Date.now();
             renderDialogMicState();
+            startRecTicker();
             dictation.start();
         }
 
@@ -3476,10 +3643,27 @@ ${sourceRule}
                 saveDialogPrefs();
                 syncDialogControls();
             });
+            els.dialogEssenceBtn.addEventListener('click', () => {
+                state.dialog.essence = !state.dialog.essence;
+                saveDialogPrefs();
+                syncDialogControls();
+                showToast(state.dialog.essence ? 'Диалог: передаю суть, без воды' : 'Диалог: обычный перевод', 'info');
+            });
+            // Очистка — двойным подтверждением: разговор теперь сохраняется, случайно стереть обидно
+            let clearArmedUntil = 0;
             els.dialogClearBtn.addEventListener('click', () => {
+                if (!state.dialog.log.length) return;
+                if (Date.now() > clearArmedUntil) {
+                    clearArmedUntil = Date.now() + 2500;
+                    showToast('Нажмите ещё раз, чтобы очистить диалог', 'info');
+                    return;
+                }
+                clearArmedUntil = 0;
                 state.dialog.log = [];
+                saveDialogLog();
                 stopSpeaking();
                 renderDialog();
+                showToast('Диалог очищен', 'info');
             });
 
             // Фото
@@ -3519,6 +3703,8 @@ ${sourceRule}
         }
 
         function init() {
+            document.addEventListener('click', unlockAudio, { capture: true });
+            document.addEventListener('touchend', unlockAudio, { capture: true, passive: true });
             restoreSettings();
             syncLanguageUI();
             initDialog();
