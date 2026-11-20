@@ -137,6 +137,9 @@
             #dialog-half-b.dialog-half-flipped > form { padding-right: 0; }
         }
 
+        /* Тап по кнопке срабатывает сразу, без ожидания двойного тапа */
+        button { touch-action: manipulation; }
+
         @media (prefers-reduced-motion: reduce) {
             .mic-listening, .scan-line, .animate-ping, .animate-pulse { animation: none !important; }
         }
@@ -743,7 +746,7 @@
             variantsOpen: false,
             historyFilter: 'all',
             arChipBlock: null,
-            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, autoSpeak: true, flipped: true }
+            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, flipped: true }
         };
 
         const els = {
@@ -2159,15 +2162,35 @@ ${sourceRule}
         }
 
         let mainDictation = null;
+        let micMode = 'idle';            // idle | listening | finishing
+        const MIC_TAP_GUARD_MS = 350;    // защита от случайного двойного тапа
 
-        function setMicUI(listening) {
-            els.micBtn.classList.toggle('bg-rose-600', listening);
-            els.micBtn.classList.toggle('text-white', listening);
-            els.micBtn.classList.toggle('mic-listening', listening);
-            els.micBtn.classList.toggle('text-slate-300', !listening);
-            els.micBtn.classList.toggle('hover:bg-yx-pill', !listening);
-            els.micBtn.setAttribute('aria-pressed', String(listening));
-            els.micBtn.title = listening ? 'Закончить и перевести' : 'Голосовой ввод';
+        const micIcon = (cls) => `<svg class="${cls}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>`;
+        const stopIcon = (cls) => `<svg class="${cls}" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>`;
+        const spinnerIcon = (cls) => `<svg class="${cls} animate-spin" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity="0.3" stroke-width="3"/><path d="M21 12a9 9 0 00-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>`;
+
+        const MIC_LABELS = {
+            idle: 'Голосовой ввод',
+            listening: 'Остановить запись и перевести',
+            finishing: 'Распознаю последние слова…'
+        };
+
+        /** Микрофон → квадрат «стоп» во время записи → крутилка, пока дорабатываются последние слова */
+        function setMicUI(mode) {
+            micMode = mode;
+            const on = mode !== 'idle';
+            els.micBtn.classList.toggle('bg-rose-600', on);
+            els.micBtn.classList.toggle('text-white', on);
+            els.micBtn.classList.toggle('mic-listening', mode === 'listening');
+            els.micBtn.classList.toggle('opacity-80', mode === 'finishing');
+            els.micBtn.classList.toggle('text-slate-300', !on);
+            els.micBtn.classList.toggle('hover:bg-yx-pill', !on);
+            els.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-3.5 h-3.5')
+                : mode === 'finishing' ? spinnerIcon('w-4 h-4')
+                : micIcon('w-[18px] h-[18px]');
+            els.micBtn.setAttribute('aria-pressed', String(on));
+            els.micBtn.setAttribute('aria-label', MIC_LABELS[mode]);
+            els.micBtn.title = MIC_LABELS[mode];
         }
 
         function setupVoiceInput() {
@@ -2184,15 +2207,23 @@ ${sourceRule}
                 onText: (spoken) => setSourceText(joinSpeech(baseText, spoken)),
                 onStop: ({ cancelled, error }) => {
                     state.isListening = false;
-                    setMicUI(false);
+                    setMicUI('idle');
                     if (error) showToast(speechErrorMessage(error), 'error');
                     // Перевод — только после того, как пользователь сам нажал «стоп»
                     if (!cancelled && els.sourceText.value.trim()) translateText();
                 }
             });
 
+            let lastTap = 0;
             els.micBtn.addEventListener('click', () => {
+                const now = Date.now();
+                if (now - lastTap < MIC_TAP_GUARD_MS) return;
+                lastTap = now;
+                if (micMode === 'finishing') return; // уже останавливаемся — второй тап не начинает новую запись
+
                 if (mainDictation.active) {
+                    // Кнопка меняется сразу, не дожидаясь браузера — видно, что нажатие принято
+                    setMicUI('finishing');
                     mainDictation.stop();
                     return;
                 }
@@ -2202,9 +2233,11 @@ ${sourceRule}
                 setLoading(false);
                 // Диктовка дописывает текст, а не стирает уже набранный
                 baseText = els.sourceText.value.trim();
+                // Убираем клавиатуру: она мешает и может перехватить микрофон
+                els.sourceText.blur();
                 state.isListening = true;
-                setMicUI(true);
-                showToast('Говорите, паузы не страшны. Нажмите ещё раз, чтобы перевести', 'info');
+                setMicUI('listening');
+                showToast('Говорите, паузы не страшны. Нажмите ■, чтобы перевести', 'info');
                 mainDictation.start();
             });
         }
@@ -3016,7 +3049,7 @@ ${sourceRule}
         /* =========================================================
          * Режим диалога
          * ========================================================= */
-        const MIC_SVG = '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>';
+        const MIC_SVG = micIcon('w-6 h-6');
         const SEND_SVG = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m0 0l-6-6m6 6l-6 6"/></svg>';
         const dialogUI = { a: null, b: null };
         const isDialogOpen = () => !els.dialogModal.classList.contains('hidden');
@@ -3075,7 +3108,7 @@ ${sourceRule}
                 e.preventDefault();
                 // Во время диктовки кнопка «отправить» просто завершает её — фраза уйдёт один раз
                 if (state.dialog.listeningSide === side) {
-                    dialogRecognizer?.stop();
+                    toggleDialogListening(side);
                     return;
                 }
                 const text = input.value.trim();
@@ -3097,15 +3130,25 @@ ${sourceRule}
             els.dialogAutoSpeakBtn.setAttribute('aria-pressed', String(state.dialog.autoSpeak));
         }
 
+        const DIALOG_MIC_LABELS = { idle: 'Говорить', listening: 'Остановить и отправить', finishing: 'Распознаю…' };
+
         function renderDialogMicState() {
             ['a', 'b'].forEach(side => {
                 const ui = dialogUI[side];
                 if (!ui) return;
-                const listening = state.dialog.listeningSide === side;
-                ui.micBtn.classList.toggle('bg-rose-600', listening);
-                ui.micBtn.classList.toggle('mic-listening', listening);
-                ui.micBtn.classList.toggle('bg-yx-accent', !listening);
-                ui.status.textContent = listening ? '● REC' : '';
+                const mode = state.dialog.finishingSide === side ? 'finishing'
+                    : state.dialog.listeningSide === side ? 'listening' : 'idle';
+                ui.micBtn.classList.toggle('bg-rose-600', mode !== 'idle');
+                ui.micBtn.classList.toggle('bg-yx-accent', mode === 'idle');
+                ui.micBtn.classList.toggle('mic-listening', mode === 'listening');
+                ui.micBtn.classList.toggle('opacity-80', mode === 'finishing');
+                if (ui.micMode !== mode) {
+                    ui.micMode = mode;
+                    ui.micBtn.innerHTML = mode === 'listening' ? stopIcon('w-6 h-6')
+                        : mode === 'finishing' ? spinnerIcon('w-6 h-6') : MIC_SVG;
+                    ui.micBtn.setAttribute('aria-label', DIALOG_MIC_LABELS[mode]);
+                }
+                ui.status.textContent = mode === 'listening' ? '● REC' : '';
             });
         }
 
@@ -3120,7 +3163,7 @@ ${sourceRule}
                 if (!msgs.length) {
                     frag.appendChild(el('div', 'm-auto text-center text-xs text-yx-muted px-6 leading-relaxed',
                         side === 'a'
-                            ? 'Нажмите на микрофон и говорите — перевод появится у собеседника и будет озвучен'
+                            ? 'Нажмите на микрофон и говорите, паузы не страшны. Закончили — нажмите ■, и перевод появится у собеседника'
                             : '🎤 → 🌐'));
                 }
                 msgs.forEach(m => {
@@ -3181,12 +3224,22 @@ ${sourceRule}
             dialogRecognizer?.cancel();
             dialogRecognizer = null;
             state.dialog.listeningSide = null;
+            state.dialog.finishingSide = null;
             renderDialogMicState();
         }
 
         /** Нажатие на микрофон: первое — начать говорить, второе — закончить и отправить перевод */
+        let lastDialogMicTap = 0;
+
         async function toggleDialogListening(side) {
+            const now = Date.now();
+            if (now - lastDialogMicTap < MIC_TAP_GUARD_MS) return;
+            lastDialogMicTap = now;
+            if (state.dialog.finishingSide) return; // предыдущая фраза ещё дораспознаётся
+
             if (state.dialog.listeningSide === side) {
+                state.dialog.finishingSide = side;
+                renderDialogMicState();
                 await dialogRecognizer?.stop();
                 return;
             }
@@ -3197,10 +3250,15 @@ ${sourceRule}
             }
 
             // Если говорил собеседник — сначала отправляем его фразу, потом включаем ваш микрофон
-            if (dialogRecognizer?.active) await dialogRecognizer.stop();
+            if (dialogRecognizer?.active) {
+                state.dialog.finishingSide = state.dialog.listeningSide;
+                renderDialogMicState();
+                await dialogRecognizer.stop();
+            }
             stopSpeaking();
 
             const input = dialogUI[side].input;
+            input.blur();
             const baseText = input.value.trim();
             const dictation = createDictation({
                 getLang: () => speechLangFor(state.dialog[side]),
@@ -3208,6 +3266,7 @@ ${sourceRule}
                 onStop: ({ cancelled, error }) => {
                     if (dialogRecognizer === dictation) dialogRecognizer = null;
                     if (state.dialog.listeningSide === side) state.dialog.listeningSide = null;
+                    if (state.dialog.finishingSide === side) state.dialog.finishingSide = null;
                     renderDialogMicState();
                     if (error) showToast(`${speechErrorMessage(error)} — можно написать текст`, 'error');
                     const text = input.value.trim();
