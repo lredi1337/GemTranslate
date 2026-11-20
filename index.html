@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru" class="dark">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -12,7 +12,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
-            darkMode: 'class',
             future: { hoverOnlyWhenSupported: true },
             theme: {
                 extend: {
@@ -23,7 +22,6 @@
                         yx: {
                             bg: '#0E0F12',
                             card: '#191A1E',
-                            cardAlt: '#141519',
                             pill: '#25272D',
                             pillHover: '#30333B',
                             divider: '#26282E',
@@ -87,15 +85,6 @@
             border-radius: 9999px;
         }
 
-        /* Скрытие скроллбара для горизонтальной ленты истории */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .no-scrollbar {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
-        }
-
         /* Анимация записи голоса */
         @keyframes micPulse {
             0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
@@ -147,7 +136,7 @@
         <!-- Верхняя панель камеры: слева пусто под системный крестик, своя кнопка закрытия справа -->
         <div class="h-14 pl-20 pr-3 sm:pl-3 bg-black/90 backdrop-blur-md flex items-center gap-2 border-b border-white/10 shrink-0 z-20">
             <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase text-white bg-white/10 px-3 py-1.5 rounded-full min-w-0 mr-auto">
-                <span id="cam-source-label" class="truncate">АВТО</span>
+                <span id="cam-source-label" class="truncate">Авто</span>
                 <span class="text-yx-accent">→</span>
                 <span id="cam-target-label" class="truncate text-yx-accent">ВЬЕТНАМСКИЙ</span>
             </div>
@@ -518,12 +507,12 @@
                             </button>
                             <button id="slow-btn" type="button" title="Медленная озвучка" aria-label="Медленная озвучка" aria-pressed="false" class="h-9 px-2 rounded-full text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 active:scale-90 transition-all">0.7×</button>
                             <button id="speak-btn" type="button" disabled title="Прослушать перевод" aria-label="Прослушать перевод" class="w-9 h-9 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
-                                <svg id="speak-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                                 </svg>
                             </button>
                             <button id="copy-btn" type="button" disabled title="Копировать перевод" aria-label="Копировать перевод" class="h-9 px-2.5 rounded-full flex items-center gap-1.5 text-slate-300 hover:text-white hover:bg-white/10 active:scale-90 transition-all disabled:opacity-30 disabled:pointer-events-none">
-                                <svg id="copy-icon" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
                                 <span id="copy-label" class="text-xs font-medium hidden">Скопировано</span>
@@ -599,7 +588,7 @@
         const PHOTO_TIMEOUT_MS = 60000;
         const DEBOUNCE_MS = 550;
         const HISTORY_LIMIT = 50;           // обычных записей; избранное хранится без ограничения
-        const STRIP_LIMIT = 15;             // карточек в нижней ленте
+        const STRIP_LIMIT = 15;             // недавних переводов под пустым полем
         const STREAM_IDLE_TIMEOUT_MS = 20000;
         const DIALOG_LOG_LIMIT = 30;
         const RECENT_LANGS_LIMIT = 5;
@@ -747,7 +736,6 @@
             sourceLang: 'auto',
             targetLang: 'Вьетнамский',
             mode: 'fast',
-            isListening: false,
             isSpeaking: false,
             lastTranslation: '',
             lastTranslit: '',
@@ -769,7 +757,7 @@
             variantsOpen: false,
             historyFilter: 'all',
             arChipBlock: null,
-            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, flipped: true, essence: false, typeSide: 'a' }
+            dialog: { a: 'Русский', b: 'Вьетнамский', log: [], listeningSide: null, finishingSide: null, autoSpeak: true, essence: false, typeSide: 'a' }
         };
 
         const els = {
@@ -2212,7 +2200,6 @@ ${sourceRule}
 
         let mainDictation = null;
         let micMode = 'idle';            // idle | listening | finishing
-        const MIC_TAP_GUARD_MS = 350;    // защита от случайного двойного тапа
 
         const micIcon = (cls) => `<svg class="${cls}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>`;
         const stopIcon = (cls) => `<svg class="${cls}" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>`;
@@ -2256,7 +2243,7 @@ ${sourceRule}
             renderRecTimers();
         }
 
-        /** Язык телефона в виде названия из списка (для голосового ввода при «АВТО») */
+        /** Язык телефона в виде названия из списка (для голосового ввода при «Определить язык») */
         function phoneLanguageName() {
             const tag = (navigator.language || 'ru-RU').toLowerCase();
             const base = tag.split('-')[0];
@@ -2266,7 +2253,7 @@ ${sourceRule}
         }
 
         /**
-         * Распознаванию речи нужен язык заранее. При «АВТО» берём последний определённый язык,
+         * Распознаванию речи нужен язык заранее. При «Определить язык» берём последний определённый язык,
          * затем исходный язык из истории, затем язык телефона — и всегда говорим пользователю, какой выбран.
          */
         function mainSpeechLanguage() {
@@ -2548,7 +2535,6 @@ ${langHint}
                     onText: (spoken) => setSourceText(joinSpeech(mainVoiceBase, spoken)),
                     onStop: ({ cancelled, error }) => {
                         mainVoiceEngine = null;
-                        state.isListening = false;
                         setMicUI('idle');
                         if (error) showToast(speechErrorMessage(error), 'error');
                         // Перевод — только после того, как пользователь сам нажал «стоп»
@@ -2581,7 +2567,6 @@ ${langHint}
                 mainVoiceBase = els.sourceText.value.trim();
                 // Убираем клавиатуру: она мешает и может перехватить микрофон
                 els.sourceText.blur();
-                state.isListening = true;
                 mainRecStartedAt = Date.now();
 
                 if (useAudioCapture) {
@@ -2599,7 +2584,6 @@ ${langHint}
 
                 if (!mainDictation) {
                     mainVoiceEngine = null;
-                    state.isListening = false;
                     setMicUI('idle');
                     showToast('Голосовой ввод не поддерживается в этом браузере', 'error');
                     return;
@@ -2632,14 +2616,12 @@ ${langHint}
             if (mainVoiceEngine === 'recorder') mainRecorder?.cancel();
             else mainDictation?.cancel();
             mainVoiceEngine = null;
-            state.isListening = false;
             setMicUI('idle');
         }
 
         async function processMainAudio(audio) {
             const done = () => {
                 mainVoiceEngine = null;
-                state.isListening = false;
                 setMicUI('idle');
             };
             if (!audio || audio.silent) {
@@ -3566,8 +3548,8 @@ ${langHint}
         }
 
         function saveDialogPrefs() {
-            const { a, b, autoSpeak, flipped, essence } = state.dialog;
-            storage.set(STORAGE_KEYS.dialog, { a, b, autoSpeak, flipped, essence });
+            const { a, b, autoSpeak, essence } = state.dialog;
+            storage.set(STORAGE_KEYS.dialog, { a, b, autoSpeak, essence });
         }
 
         /** Разговор переживает перезагрузку страницы (без незавершённых сообщений) */
@@ -3595,7 +3577,6 @@ ${langHint}
                 state.dialog.a = saved.a;
                 state.dialog.b = saved.b;
                 state.dialog.autoSpeak = saved.autoSpeak !== false;
-                state.dialog.flipped = saved.flipped !== false;
                 state.dialog.essence = saved.essence === true;
             } else {
                 state.dialog.a = state.sourceLang === 'auto' ? 'Русский' : state.sourceLang;
@@ -3618,7 +3599,7 @@ ${langHint}
                 bindMicButton(micBtn, {
                     isIdle: () => state.dialog.listeningSide !== side,
                     isBusy: () => !!state.dialog.finishingSide,
-                    start: () => toggleDialogListening(side, { force: true }),
+                    start: () => toggleDialogListening(side),
                     finish: () => finishDialogVoice(side)
                 });
                 langBtn.addEventListener('click', () => openLanguageModal(side === 'a' ? 'dialogA' : 'dialogB'));
@@ -3639,7 +3620,7 @@ ${langHint}
                 const fresh = backdropTapPointer !== null;
                 backdropTapPointer = null;
                 e.stopPropagation();
-                if (fresh && !dialogMenuProtected()) closeDialogMenu();
+                if (fresh) closeDialogMenu(); // палец, открывший меню, начал касание на сообщении — он не закроет
             });
             els.dialogMenuBackdrop.addEventListener('pointercancel', () => { backdropTapPointer = null; });
             els.dialogMenuBackdrop.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -3730,25 +3711,23 @@ ${langHint}
             let timer = null;
             let start = null;
             let fired = false;
-            let pressed = false;   // палец (кнопка мыши) ещё не отпущен
             const cancel = () => { clearTimeout(timer); timer = null; };
             node.addEventListener('pointerdown', (e) => {
                 fired = false;
-                pressed = true;
                 if (e.button) return;
                 start = { x: e.clientX, y: e.clientY };
                 cancel();
                 timer = setTimeout(() => {
                     fired = true;
                     navigator.vibrate?.(12);
-                    onLong(start.x, start.y, true);
+                    onLong(start.x, start.y);
                 }, 480);
             });
             node.addEventListener('pointermove', (e) => {
                 if (timer && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel();
             });
-            node.addEventListener('pointerup', () => { pressed = false; cancel(); });
-            node.addEventListener('pointercancel', () => { pressed = false; cancel(); });
+            node.addEventListener('pointerup', cancel);
+            node.addEventListener('pointercancel', cancel);
             node.addEventListener('pointerleave', cancel);
             // Android присылает contextmenu на долгое нажатие, компьютер — на правый клик
             node.addEventListener('contextmenu', (e) => {
@@ -3756,7 +3735,7 @@ ${langHint}
                 cancel();
                 if (!fired) {
                     fired = true;
-                    onLong(e.clientX, e.clientY, pressed);
+                    onLong(e.clientX, e.clientY);
                 }
             });
             node.addEventListener('click', (e) => {
@@ -3769,7 +3748,7 @@ ${langHint}
                 }
                 // Короткий тап по сообщению (не по кнопке) тоже открывает меню —
                 // на случай, если приложение-хозяин перехватывает долгое нажатие
-                if (!e.target.closest('button')) onLong(e.clientX, e.clientY, false);
+                if (!e.target.closest('button')) onLong(e.clientX, e.clientY);
             }, true);
         }
 
@@ -3851,24 +3830,8 @@ ${langHint}
 
         let dialogMenuTarget = null;   // { msg, node }
 
-        // Пока палец, открывший меню, лежит на экране (и чуть после), касания фона меню не закрывают:
-        // иначе отпускание пальца засчитывается как тап мимо меню и оно сразу пропадает
-        let dialogMenuHeld = false;
-        let dialogMenuGuardUntil = 0;
-        const releaseDialogMenuHold = () => {
-            if (!dialogMenuHeld) return;
-            dialogMenuHeld = false;
-            dialogMenuGuardUntil = Date.now() + 300;
-        };
-        document.addEventListener('pointerup', releaseDialogMenuHold, true);
-        document.addEventListener('pointercancel', releaseDialogMenuHold, true);
-        document.addEventListener('touchend', releaseDialogMenuHold, { capture: true, passive: true });
-        const dialogMenuProtected = () => dialogMenuHeld || Date.now() < dialogMenuGuardUntil;
-
-        function openDialogMenu(msg, node, x, y, held = false) {
+        function openDialogMenu(msg, node, x, y) {
             closeDialogMenu();
-            dialogMenuHeld = held;
-            dialogMenuGuardUntil = Date.now() + 300;
             dialogMenuTarget = { msg, node };
             node.classList.add('scale-[0.98]', 'opacity-80');
             const menu = els.dialogMenu;
@@ -4011,7 +3974,7 @@ ${langHint}
                     row.append(bubble, speakerButton(m.translated, toLang));
                 }
                 wrap.appendChild(row);
-                if (!m.pending) attachLongPress(wrap, (x, y, held) => openDialogMenu(m, wrap, x, y, held));
+                if (!m.pending) attachLongPress(wrap, (x, y) => openDialogMenu(m, wrap, x, y));
                 if (m === state.dialog.editing) wrap.classList.add('opacity-60');
                 frag.appendChild(wrap);
             });
@@ -4155,12 +4118,7 @@ ${langHint}
         }
 
         /** Нажатие на микрофон: первое — начать говорить, второе — закончить и отправить перевод */
-        let lastDialogMicTap = 0;
-
-        async function toggleDialogListening(side, { force = false } = {}) {
-            const now = Date.now();
-            if (!force && now - lastDialogMicTap < MIC_TAP_GUARD_MS) return;
-            lastDialogMicTap = now;
+        async function toggleDialogListening(side) {
             if (state.dialog.finishingSide) return; // предыдущая фраза ещё дозаписывается
 
             if (state.dialog.listeningSide === side) {
