@@ -833,7 +833,6 @@
         let toastTimer = null;
         let copyLabelTimer = null;
         let arResizeTimer = null;
-        let recognition = null;
         let dialogRecognizer = null;
         let dialogAbort = null;
         let currentAudioEl = null;
@@ -2011,6 +2010,156 @@ ${sourceRule}
         /* =========================================================
          * Голосовой ввод
          * ========================================================= */
+        const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const IS_ANDROID = /Android/i.test(navigator.userAgent);
+        const joinSpeech = (...parts) => parts.map(s => (s || '').trim()).filter(Boolean).join(' ');
+
+        /**
+         * Сеанс диктовки «нажал — говоришь — нажал ещё раз».
+         * Браузер сам обрывает распознавание на паузе в речи (на Android — почти сразу),
+         * поэтому, пока пользователь не нажал «стоп», распознавание тихо перезапускается,
+         * а уже сказанный текст сохраняется. Перевод запускает только onStop.
+         */
+        function createDictation({ getLang, onText, onStop }) {
+            let active = false;      // пользователь ещё не нажал «стоп»
+            let rec = null;          // текущий запуск распознавания
+            let committed = '';      // текст из завершённых запусков
+            let runText = '';        // текст текущего запуска (включая промежуточный)
+            let fatalError = null;
+            let quickEnds = 0;       // запуски, которые закончились сразу (защита от бесконечного цикла)
+            let runStartedAt = 0;
+            let restartTimer = null;
+            let cancelled = false;
+            let resolveStop = null;
+
+            const fullText = () => joinSpeech(committed, runText);
+
+            function finish() {
+                clearTimeout(restartTimer);
+                rec = null;
+                active = false;
+                const result = { text: fullText(), cancelled, error: fatalError };
+                const resolve = resolveStop;
+                resolveStop = null;
+                onStop(result);
+                resolve?.(result);
+            }
+
+            function startRun() {
+                restartTimer = null;
+                if (!active) return finish();
+                const r = new SpeechRecognitionCtor();
+                r.lang = getLang();
+                r.interimResults = true;
+                // На Android непрерывный режим дублирует фразы — там используем короткие запуски подряд
+                r.continuous = !IS_ANDROID;
+                runText = '';
+
+                r.onresult = (event) => {
+                    let t = '';
+                    for (let i = 0; i < event.results.length; i++) t += event.results[i][0].transcript;
+                    runText = t;
+                    quickEnds = 0;
+                    onText(fullText());
+                };
+                r.onerror = (event) => {
+                    // Тишина и ручная остановка — не ошибки: сеанс продолжается
+                    if (event.error === 'no-speech' || event.error === 'aborted') return;
+                    fatalError = event.error;
+                };
+                r.onend = () => {
+                    if (rec !== r) return;
+                    committed = fullText();
+                    runText = '';
+                    rec = null;
+                    if (!active || fatalError) return finish();
+
+                    // Запуск закончился мгновенно и без речи — возможно, распознавание недоступно
+                    quickEnds = Date.now() - runStartedAt < 1000 ? quickEnds + 1 : 0;
+                    if (quickEnds >= 5) {
+                        fatalError = 'restart-loop';
+                        return finish();
+                    }
+                    restartTimer = setTimeout(startRun, quickEnds ? 300 : 0);
+                };
+
+                rec = r;
+                runStartedAt = Date.now();
+                try {
+                    r.start();
+                } catch {
+                    rec = null;
+                    fatalError = 'start-failed';
+                    finish();
+                }
+            }
+
+            return {
+                get active() { return active; },
+                start(initialText = '') {
+                    if (active) return;
+                    active = true;
+                    cancelled = false;
+                    fatalError = null;
+                    committed = initialText;
+                    runText = '';
+                    quickEnds = 0;
+                    startRun();
+                },
+                /** Закончить диктовку: дождаться последних слов и вызвать onStop */
+                stop() {
+                    if (!active) return Promise.resolve(null);
+                    const done = new Promise(r => { resolveStop = r; });
+                    active = false;
+                    if (rec) {
+                        const r = rec;
+                        try { r.stop(); } catch { finish(); return done; }
+                        // Страховка: если браузер так и не прислал onend — завершаем сами
+                        setTimeout(() => {
+                            if (rec !== r) return;
+                            rec = null;
+                            r.onend = null;
+                            try { r.abort(); } catch {}
+                            committed = fullText();
+                            runText = '';
+                            finish();
+                        }, 3000);
+                    } else {
+                        finish(); // были между перезапусками
+                    }
+                    return done;
+                },
+                /** Прервать без перевода (сворачивание приложения, закрытие окна) */
+                cancel() {
+                    if (!active) return;
+                    active = false;
+                    cancelled = true;
+                    const r = rec;
+                    rec = null;
+                    if (r) {
+                        r.onend = null;
+                        try { r.abort(); } catch {}
+                    }
+                    finish();
+                }
+            };
+        }
+
+        function speechErrorMessage(error) {
+            if (error === 'not-allowed' || error === 'service-not-allowed') return 'Нет доступа к микрофону в этом окне';
+            if (error === 'audio-capture') return 'Микрофон недоступен';
+            if (error === 'network') return 'Нет связи с сервисом распознавания речи';
+            if (error === 'language-not-supported') return 'Этот язык не поддерживается для голосового ввода';
+            return 'Не удалось распознать речь';
+        }
+
+        function speechLangFor(langName) {
+            const langObj = findLanguageObj(langName);
+            return langObj ? langObj.bcp47 : (navigator.language || 'ru-RU');
+        }
+
+        let mainDictation = null;
+
         function setMicUI(listening) {
             els.micBtn.classList.toggle('bg-rose-600', listening);
             els.micBtn.classList.toggle('text-white', listening);
@@ -2018,77 +2167,45 @@ ${sourceRule}
             els.micBtn.classList.toggle('text-slate-300', !listening);
             els.micBtn.classList.toggle('hover:bg-yx-pill', !listening);
             els.micBtn.setAttribute('aria-pressed', String(listening));
+            els.micBtn.title = listening ? 'Закончить и перевести' : 'Голосовой ввод';
         }
 
         function setupVoiceInput() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
+            if (!SpeechRecognitionCtor) {
                 els.micBtn.addEventListener('click', () => {
                     showToast('Голосовой ввод не поддерживается в этом браузере', 'error');
                 });
                 return;
             }
 
-            recognition = new SpeechRecognition();
-            recognition.interimResults = true;
-            // Непрерывная диктовка не обрывается на паузах; остановка — повторным нажатием.
-            // На Android непрерывный режим дублирует фразы, поэтому там он выключен.
-            const continuous = !/Android/i.test(navigator.userAgent);
-            recognition.continuous = continuous;
             let baseText = '';
-
-            recognition.onstart = () => {
-                state.isListening = true;
-                setMicUI(true);
-                // Диктовка дописывает текст, а не стирает уже набранный
-                const current = els.sourceText.value.trim();
-                baseText = current ? `${current} ` : '';
-                showToast(continuous ? 'Говорите… Нажмите ещё раз, чтобы остановить' : 'Говорите...', 'info');
-            };
-
-            recognition.onresult = (event) => {
-                let transcript = '';
-                for (let i = 0; i < event.results.length; i++) {
-                    transcript += event.results[i][0].transcript;
+            mainDictation = createDictation({
+                getLang: () => speechLangFor(state.sourceLang === 'auto' ? state.detectedLangName : state.sourceLang),
+                onText: (spoken) => setSourceText(joinSpeech(baseText, spoken)),
+                onStop: ({ cancelled, error }) => {
+                    state.isListening = false;
+                    setMicUI(false);
+                    if (error) showToast(speechErrorMessage(error), 'error');
+                    // Перевод — только после того, как пользователь сам нажал «стоп»
+                    if (!cancelled && els.sourceText.value.trim()) translateText();
                 }
-                if (!transcript.trim()) return;
-                setSourceText(baseText + transcript.trim());
-                // Живой перевод по ходу речи
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(translateText, 900);
-            };
-
-            recognition.onerror = (event) => {
-                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                    showToast('Нет доступа к микрофону в этом окне', 'error');
-                } else if (event.error === 'no-speech') {
-                    showToast('Речь не услышана — попробуйте ещё раз', 'info');
-                } else if (event.error !== 'aborted') {
-                    showToast('Не удалось распознать речь', 'error');
-                }
-            };
-
-            recognition.onend = () => {
-                state.isListening = false;
-                setMicUI(false);
-                if (els.sourceText.value.trim()) translateText();
-            };
+            });
 
             els.micBtn.addEventListener('click', () => {
-                if (state.isListening) {
-                    recognition.stop();
+                if (mainDictation.active) {
+                    mainDictation.stop();
                     return;
                 }
-
                 stopSpeaking();
-                const langObj = findLanguageObj(state.sourceLang === 'auto' ? state.detectedLangName : state.sourceLang);
-                recognition.lang = langObj ? langObj.bcp47 : (navigator.language || 'ru-RU');
-
-                try {
-                    recognition.start();
-                } catch {
-                    showToast('Ошибка запуска микрофона', 'error');
-                }
+                clearTimeout(debounceTimer);
+                textReq.cancel();
+                setLoading(false);
+                // Диктовка дописывает текст, а не стирает уже набранный
+                baseText = els.sourceText.value.trim();
+                state.isListening = true;
+                setMicUI(true);
+                showToast('Говорите, паузы не страшны. Нажмите ещё раз, чтобы перевести', 'info');
+                mainDictation.start();
             });
         }
 
@@ -2568,7 +2685,7 @@ ${sourceRule}
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     stopLiveCameraStream();
-                    if (state.isListening && recognition) recognition.abort();
+                    mainDictation?.cancel();
                     stopDialogRecognizer();
                 } else if (isCameraOpen() && isLiveView()) {
                     startLiveCameraStream();
@@ -2956,6 +3073,11 @@ ${sourceRule}
 
             form.addEventListener('submit', (e) => {
                 e.preventDefault();
+                // Во время диктовки кнопка «отправить» просто завершает её — фраза уйдёт один раз
+                if (state.dialog.listeningSide === side) {
+                    dialogRecognizer?.stop();
+                    return;
+                }
                 const text = input.value.trim();
                 if (!text) return;
                 input.value = '';
@@ -3054,74 +3176,56 @@ ${sourceRule}
             if (msg.translated && state.dialog.autoSpeak) speakText(msg.translated, to);
         }
 
+        /** Прервать диктовку в диалоге без отправки (сказанное остаётся в поле ввода) */
         function stopDialogRecognizer() {
-            if (dialogRecognizer) {
-                dialogRecognizer.onend = null;
-                try { dialogRecognizer.abort(); } catch {}
-                dialogRecognizer = null;
-            }
+            dialogRecognizer?.cancel();
+            dialogRecognizer = null;
             state.dialog.listeningSide = null;
             renderDialogMicState();
         }
 
-        function toggleDialogListening(side) {
+        /** Нажатие на микрофон: первое — начать говорить, второе — закончить и отправить перевод */
+        async function toggleDialogListening(side) {
             if (state.dialog.listeningSide === side) {
-                dialogRecognizer?.stop();
+                await dialogRecognizer?.stop();
                 return;
             }
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
+            if (!SpeechRecognitionCtor) {
                 showToast('Голосовой ввод недоступен — напишите текст', 'error');
                 dialogUI[side].input.focus();
                 return;
             }
 
-            stopDialogRecognizer();
+            // Если говорил собеседник — сначала отправляем его фразу, потом включаем ваш микрофон
+            if (dialogRecognizer?.active) await dialogRecognizer.stop();
             stopSpeaking();
 
-            const rec = new SpeechRecognition();
-            const langObj = findLanguageObj(state.dialog[side]);
-            rec.lang = langObj ? langObj.bcp47 : (navigator.language || 'ru-RU');
-            rec.interimResults = true;
-            rec.continuous = false;
-            let transcript = '';
-
-            rec.onresult = (event) => {
-                transcript = '';
-                for (let i = 0; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-                dialogUI[side].input.value = transcript;
-            };
-            rec.onerror = (event) => {
-                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                    showToast('Нет доступа к микрофону — напишите текст', 'error');
-                } else if (event.error === 'no-speech') {
-                    showToast('Речь не услышана', 'info');
+            const input = dialogUI[side].input;
+            const baseText = input.value.trim();
+            const dictation = createDictation({
+                getLang: () => speechLangFor(state.dialog[side]),
+                onText: (spoken) => { input.value = joinSpeech(baseText, spoken); },
+                onStop: ({ cancelled, error }) => {
+                    if (dialogRecognizer === dictation) dialogRecognizer = null;
+                    if (state.dialog.listeningSide === side) state.dialog.listeningSide = null;
+                    renderDialogMicState();
+                    if (error) showToast(`${speechErrorMessage(error)} — можно написать текст`, 'error');
+                    const text = input.value.trim();
+                    if (!cancelled && text) {
+                        input.value = '';
+                        sendDialogMessage(side, text);
+                    }
                 }
-            };
-            rec.onend = () => {
-                if (dialogRecognizer === rec) dialogRecognizer = null;
-                state.dialog.listeningSide = null;
-                renderDialogMicState();
-                const text = transcript.trim();
-                if (text) {
-                    dialogUI[side].input.value = '';
-                    sendDialogMessage(side, text);
-                }
-            };
+            });
 
-            dialogRecognizer = rec;
+            dialogRecognizer = dictation;
             state.dialog.listeningSide = side;
             renderDialogMicState();
-            try {
-                rec.start();
-            } catch {
-                stopDialogRecognizer();
-                showToast('Ошибка запуска микрофона', 'error');
-            }
+            dictation.start();
         }
 
         function openDialogMode() {
-            if (state.isListening && recognition) recognition.abort();
+            mainDictation?.cancel();
             stopSpeaking();
             dialogAbort = new AbortController();
             els.dialogModal.classList.remove('hidden');
