@@ -998,6 +998,45 @@
          * ========================================================= */
         const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+        /*
+         * Окно Gemini при каждом запуске открывает приложение как новый сайт: память браузера (и разрешения)
+         * стираются. Поэтому важные настройки и история дублируются в хранилище Canvas (Firestore),
+         * привязанное к аккаунту. Локальная копия — для мгновенного старта, облачная — между запусками.
+         */
+        const CLOUD_KEYS = new Set(['yx_ai_translator_langs', 'yx_ai_translator_mode', 'yx_ai_translator_history',
+            'yx_ai_translator_recent_langs', 'yx_ai_translator_prefs', 'yx_ai_translator_dialog', 'yx_ai_translator_dialog_log']);
+        const LOCAL_TS_KEY = 'yx_ai_translator_ts';
+        // Пока человек ничего не нажал, записи — это значения по умолчанию при запуске: они не должны затирать облако
+        let userActed = false;
+        ['pointerdown', 'keydown'].forEach(ev => window.addEventListener(ev, () => { userActed = true; }, { capture: true, once: true }));
+        const cloud = { write: null, queue: {}, timer: null };
+
+        function localStamp(key, ts) {
+            try {
+                const all = JSON.parse(localStorage.getItem(LOCAL_TS_KEY) || '{}');
+                if (ts === undefined) return all[key] || 0;
+                all[key] = ts;
+                localStorage.setItem(LOCAL_TS_KEY, JSON.stringify(all));
+            } catch { return 0; }
+        }
+
+        function cloudQueue(key, raw) {
+            if (!CLOUD_KEYS.has(key) || !userActed) return;
+            const ts = Date.now();
+            localStamp(key, ts);
+            cloud.queue[key] = { v: raw, ts };
+            if (!cloud.write) return; // облако ещё не подключено — отправим, когда подключится
+            clearTimeout(cloud.timer);
+            cloud.timer = setTimeout(flushCloud, 800);
+        }
+
+        function flushCloud() {
+            if (!cloud.write) return;
+            const batch = cloud.queue;
+            cloud.queue = {};
+            for (const [key, entry] of Object.entries(batch)) cloud.write(key, entry).catch(() => {});
+        }
+
         const storage = {
             get(key, fallback = null) {
                 try {
@@ -1007,12 +1046,62 @@
                 } catch { return fallback; }
             },
             set(key, value) {
-                try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+                const raw = JSON.stringify(value);
+                let same = false;
+                try { same = localStorage.getItem(key) === raw; localStorage.setItem(key, raw); } catch {}
+                if (!same) cloudQueue(key, raw);
             },
             remove(key) {
-                try { localStorage.removeItem(key); } catch {}
+                let existed = false;
+                try { existed = localStorage.getItem(key) != null; localStorage.removeItem(key); } catch {}
+                if (existed) cloudQueue(key, null);
             }
         };
+
+        /** Подключить хранилище Canvas, забрать сохранённое и применить, если оно новее локального */
+        async function initCloudSync() {
+            if (typeof __firebase_config === 'undefined' || !__firebase_config) return;
+            try {
+                const FB = 'https://www.gstatic.com/firebasejs/11.6.1/';
+                const [{ initializeApp }, authMod, fs] = await Promise.all([
+                    import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')
+                ]);
+                const config = typeof __firebase_config === 'string' ? JSON.parse(__firebase_config) : __firebase_config;
+                const app = initializeApp(config, 'yx-translator');
+                const auth = authMod.getAuth(app);
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await authMod.signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await authMod.signInAnonymously(auth);
+                }
+                const uid = auth.currentUser?.uid;
+                if (!uid) return;
+                const appId = typeof __app_id !== 'undefined' && __app_id ? String(__app_id) : 'default-app-id';
+                const db = fs.getFirestore(app);
+                const col = fs.collection(db, 'artifacts', appId, 'users', uid, 'translator');
+
+                const snap = await fs.getDocs(col);
+                let changed = false;
+                snap.forEach(d => {
+                    const key = d.id;
+                    const data = d.data();
+                    if (!CLOUD_KEYS.has(key) || !data || typeof data.ts !== 'number') return;
+                    if (data.ts <= localStamp(key)) return; // локальное новее — его и отправим ниже
+                    try {
+                        if (data.v == null) localStorage.removeItem(key);
+                        else localStorage.setItem(key, data.v);
+                    } catch {}
+                    localStamp(key, data.ts);
+                    changed = true;
+                });
+
+                cloud.write = (key, entry) => fs.setDoc(fs.doc(col, key), entry);
+                if (changed) applyStoredState();
+                flushCloud(); // то, что человек успел поменять, пока облако подключалось
+            } catch {
+                // Хранилище недоступно — работаем как раньше, только с памятью браузера
+            }
+        }
 
         /** Независимый «слот» запросов: новый запрос отменяет предыдущий, устаревшие ответы игнорируются. */
         function createRequestSlot() {
@@ -1663,13 +1752,18 @@
             if (!side) return;
             pushRecentLang(langValue);
 
-            // Языки режима диалога выбираются отдельно и не трогают основной экран
+            // Языки диалога и главного экрана — одна пара: выбор в диалоге меняет и главный экран
             if (side === 'dialogA' || side === 'dialogB') {
                 const key = side === 'dialogA' ? 'a' : 'b';
                 const otherKey = key === 'a' ? 'b' : 'a';
                 state.dialog[key] = langValue;
                 if (state.dialog[otherKey] === langValue) state.dialog[otherKey] = getFallbackLanguage(langValue);
                 saveDialogPrefs();
+                const prevPair = `${state.sourceLang}\u0001${state.targetLang}`;
+                state.sourceLang = state.dialog.a;
+                state.targetLang = state.dialog.b;
+                syncLanguageUI();
+                if (prevPair !== `${state.sourceLang}\u0001${state.targetLang}` && els.sourceText.value.trim()) translateText();
                 closeLanguageModal();
                 renderDialog();
                 return;
@@ -1752,7 +1846,12 @@
                 ...LANGUAGES.slice(POPULAR_LANG_COUNT).sort((x, y) => langDisplayName(x.name).localeCompare(langDisplayName(y.name), UI_LOCALE))
             ];
             const nq = foldForSearch(q);
-            const filtered = ordered.filter(item => !q || langSearchText(item).includes(nq));
+            let filtered = ordered.filter(item => !q || langSearchText(item).includes(nq));
+            // Сначала языки, у которых какое-то название начинается с набранного: «тайский» → Тайский, а не Китайский
+            if (q) {
+                const startsWith = (item) => langSearchText(item).split(' | ').some(name => name.startsWith(nq));
+                filtered = [...filtered.filter(startsWith), ...filtered.filter(item => !startsWith(item))];
+            }
 
             filtered.forEach(item => {
                 frag.appendChild(createLangOption({
@@ -4571,6 +4670,13 @@ ${langHint}
         }
 
         function initDialog() {
+            loadDialogSettings();
+            state.dialog.log = loadDialogLog();
+            buildDialogUI();
+            syncDialogControls();
+        }
+
+        function loadDialogSettings() {
             const saved = storage.get(STORAGE_KEYS.dialog);
             if (saved && typeof saved === 'object' && typeof saved.a === 'string' && typeof saved.b === 'string') {
                 state.dialog.a = saved.a;
@@ -4582,9 +4688,6 @@ ${langHint}
                 state.dialog.b = state.targetLang;
                 if (state.dialog.a === state.dialog.b) state.dialog.b = getFallbackLanguage(state.dialog.a);
             }
-            state.dialog.log = loadDialogLog();
-            buildDialogUI();
-            syncDialogControls();
         }
 
         function buildDialogUI() {
@@ -5264,9 +5367,25 @@ ${langHint}
             dictation.start();
         }
 
+        /** Диалог открывается с той же парой языков, что на главном экране */
+        function syncDialogLangsFromMain() {
+            const b = state.targetLang;
+            let a = state.sourceLang;
+            if (a === 'auto') {
+                // «Определить язык»: в диалоге нужен конкретный язык — оставляем прежний свой или берём язык телефона
+                a = state.dialog.a && state.dialog.a !== b ? state.dialog.a : phoneLanguageName();
+            }
+            if (a === b) a = getFallbackLanguage(b);
+            if (a === state.dialog.a && b === state.dialog.b) return;
+            state.dialog.a = a;
+            state.dialog.b = b;
+            saveDialogPrefs();
+        }
+
         function openDialogMode() {
             cancelMainVoice();
             stopSpeaking();
+            syncDialogLangsFromMain();
             dialogAbort = new AbortController();
             els.dialogModal.classList.remove('hidden');
             // Сразу ставим микрофоны на место, без анимации при открытии окна
@@ -5525,6 +5644,20 @@ ${langHint}
             syncSlowButton();
         }
 
+        /** Перечитать сохранённое (после загрузки из облака) и перерисовать экран */
+        function applyStoredState() {
+            restoreSettings();
+            syncLanguageUI();
+            loadHistory();
+            loadDialogSettings();
+            state.dialog.log = loadDialogLog();
+            syncDialogControls();
+            if (isDialogOpen()) {
+                syncDialogLangsFromMain();
+                renderDialog();
+            }
+        }
+
         function init() {
             applyStaticI18n();
             document.addEventListener('click', unlockAudio, { capture: true });
@@ -5541,6 +5674,7 @@ ${langHint}
             setupVoiceInput();
             initEvents();
             initExtraEvents();
+            initCloudSync(); // в фоне: сохранённое между запусками подтянется через секунду-две
             if (uiNeedsTranslation) {
                 // Самый первый запуск: пару секунд показываем заставку, а не английский интерфейс, который тут же сменится
                 if (uiFirstRun) {
