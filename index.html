@@ -1636,6 +1636,7 @@
         }
 
         function openLanguageModal(side) {
+            endMainVoiceForOtherAction();
             state.modalPickerSide = side;
             els.langModalTitle.textContent = ({
                 source: t('sourceLang'),
@@ -1915,6 +1916,7 @@
                 setTimeout(syncViewportLayout, 250);
             });
             els.sourceText.addEventListener('blur', () => setTimeout(syncViewportLayout, 120));
+            els.sourceText.addEventListener('focus', () => endMainVoiceForOtherAction());
             document.addEventListener('focusin', (e) => {
                 // Включаем сразу, выключаем только с задержкой (см. focusout) — чтобы тап по кнопке не «уехал»
                 if (hidesPanelsWhileTyping(e.target)) syncTypingState();
@@ -2053,6 +2055,7 @@
         const isLiveView = () => els.capturedWrapper.classList.contains('hidden');
 
         async function openCameraMode() {
+            endMainVoiceForOtherAction();
             syncLanguageUI();
             els.cameraModal.classList.remove('hidden');
             resetCameraViewToLive();
@@ -2600,7 +2603,8 @@ ${sourceRule}
         }
 
         /** Сравниваем тексты без учёта регистра, пробелов и знаков препинания */
-        const normalizeForCompare = (str) => String(str || '').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+        // Регистр и знаки препинания не важны, а границы слов важны: «банк о мат» и «банкомат» — разные фразы
+        const normalizeForCompare = (str) => String(str || '').toLowerCase().replace(/[\p{P}\p{S}]+/gu, ' ').replace(/\s+/g, ' ').trim();
 
         /** Какие слова подсказки отличаются от исходного текста (наибольшая общая подпоследовательность слов) */
         function changedWordFlags(original, suggestion) {
@@ -3378,6 +3382,15 @@ ${langHint}
             }
             const audio = await mainRecorder.stop();
             await processMainAudio(audio);
+        }
+
+        /**
+         * Человек перешёл к другому действию (выбор языка, история, камера, поле ввода), а запись ещё идёт.
+         * Не оставляем микрофон слушать фоном: заканчиваем, как по ■, — сказанное переводится
+         */
+        function endMainVoiceForOtherAction() {
+            if (micMode === 'starting') cancelMainVoice();
+            else if (micMode === 'listening') finishMainVoice();
         }
 
         /** Прервать запись без перевода (например, при открытии диалога) */
@@ -4311,6 +4324,7 @@ ${langHint}
          * Полная история
          * ========================================================= */
         function openHistoryModal() {
+            endMainVoiceForOtherAction();
             els.historySearch.value = '';
             renderHistoryList();
             els.historyModal.classList.remove('hidden');
@@ -4783,10 +4797,15 @@ ${langHint}
                 startDialogEdit(msg);
             } else if (action === 'delete') {
                 if (state.dialog.editing === msg) endDialogEdit();
+                const snapshot = state.dialog.log.slice();
                 state.dialog.log = state.dialog.log.filter(m => m !== msg);
                 saveDialogLog();
                 renderDialog();
-                showToast(tr.deleted, 'info');
+                showToast(tr.deleted, 'info', { action: { label: t('undo'), onClick: () => {
+                    state.dialog.log = snapshot;
+                    saveDialogLog();
+                    renderDialog();
+                } } });
             }
         }
 
