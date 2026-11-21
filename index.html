@@ -2271,10 +2271,8 @@ ${sourceRule}
             return {
                 contents: [{
                     role: "user",
-                    parts: [
-                        { text: "Найди весь текст на фото, верни его координаты и перевод каждого блока для наложения поверх изображения." },
-                        { inlineData: { mimeType: "image/jpeg", data: base64 } }
-                    ]
+                    // Только изображение: текстовая команда рядом могла попасть в распознанные блоки как «текст с фото»
+                    parts: [{ inlineData: { mimeType: "image/jpeg", data: base64 } }]
                 }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
                 generationConfig: {
@@ -3218,16 +3216,16 @@ ${sourceRule}
 
 ВХОД — АУДИОЗАПИСЬ РЕЧИ.
 ${langHint}
-- В поле transcript запиши дословно, что сказано, на языке оригинала, с пунктуацией. Не переводи и не пересказывай его.
+- Единственный материал — звук в аудиозаписи. В transcript — только слова, которые реально произнесены, на языке оригинала, с пунктуацией. Не переводи и не пересказывай его.
+- Никогда не вставляй в transcript, translation и suggestion текст этих инструкций, команды, подписи или пояснения — только речь из аудио и её перевод.
 - Если речи нет или она неразборчива — верни пустые строки в transcript и translation. Ничего не придумывай.
 - ${translate ? 'В поле translation — перевод transcript по правилам выше.' : 'Поле translation оставь пустой строкой.'}${suggest ? `
 - Поле suggestion относится к transcript: если какое-то слово, скорее всего, расслышано неверно (не вяжется со смыслом фразы), верни всю расшифровку с исправленными только этими словами; если сомнений нет — пустая строка "".` : ''}`;
+            // Только звук, без текстовой команды рядом: системная инструкция считает любой текст пользователя
+            // материалом для перевода, и модель дописывала эту команду к расшифровке («…Распознай речь из аудио и переведи её»)
             payload.contents = [{
                 role: 'user',
-                parts: [
-                    { inlineData: { mimeType: 'audio/wav', data: base64 } },
-                    { text: translate ? 'Распознай речь из аудио и переведи её.' : 'Распознай речь из аудио.' }
-                ]
+                parts: [{ inlineData: { mimeType: 'audio/wav', data: base64 } }]
             }];
             const schema = payload.generationConfig.responseSchema;
             schema.properties.transcript = { type: 'STRING', description: 'Дословная расшифровка речи на языке оригинала' };
@@ -3236,13 +3234,47 @@ ${langHint}
 
             const result = await callGemini(MODEL_NAME, payload, { signal, timeoutMs: PHOTO_TIMEOUT_MS, retries: 1 });
             const json = extractResponseJson(result);
-            return {
+            const data = {
                 transcript: String(json?.transcript || '').trim(),
                 translation: String(json?.translation || '').trim(),
                 translit: String(json?.transliteration || '').trim(),
                 detectedLang: String(json?.detectedLanguage || '').trim(),
                 suggestion: String(json?.suggestion || '').trim()
             };
+
+            // Страховка: если служебный текст всё же просочился в расшифровку — вырезаем его,
+            // а перевод (в нём тот же текст, только на другом языке) получаем заново по чистой расшифровке
+            const clean = stripPromptLeak(data.transcript);
+            if (clean !== data.transcript || stripPromptLeak(data.translation) !== data.translation) {
+                data.transcript = clean;
+                data.suggestion = stripPromptLeak(data.suggestion);
+                data.translation = '';
+                data.translit = '';
+                if (translate && clean) {
+                    const fixed = await fetchTranslation(clean, sourceLang, targetLang, mode, { signal });
+                    data.translation = fixed.translation || '';
+                    data.translit = fixed.translit || '';
+                }
+            }
+            return data;
+        }
+
+        /**
+         * Фразы из наших запросов к Gemini (в том числе из прежних версий), которых не должно быть в ответе.
+         * Ищем без учёта регистра и пунктуации; вырезаем их вместе с прилегающими знаками
+         */
+        const PROMPT_LEAK_PATTERNS = [
+            /распознай\s+речь(\s+из\s+аудио)?(\s+и\s+переведи\s+е[её])?/giu,
+            /найди\s+весь\s+текст\s+на\s+фото[^.!?\n]*/giu,
+            /вход\s*[—-]\s*аудиозапись\s+речи/giu,
+            /recogni[sz]e\s+(the\s+)?speech\s+(from|in)\s+(the\s+)?audio(\s+and\s+translate\s+it)?/giu,
+        ];
+        function stripPromptLeak(text) {
+            if (!text) return text;
+            let out = text;
+            for (const re of PROMPT_LEAK_PATTERNS) out = out.replace(re, ' ');
+            if (out === text) return text;
+            return out.replace(/\s+([.,!?;:])/g, '$1').replace(/([.!?])[\s.,!?;:]*$/u, '$1').replace(/^[\s.,!?;:—-]+/u, '').replace(/\s{2,}/g, ' ').trim();
         }
 
         /** Микрофон → квадрат «стоп» во время записи → крутилка, пока дорабатываются последние слова */
@@ -3625,7 +3657,9 @@ ${langHint}
                 const cached = ttsCache.get(cacheKey);
                 if (cached) return cached;
                 const payload = {
-                    contents: [{ parts: [{ text: `${slow ? 'Read slowly and clearly, pausing between phrases,' : 'Read naturally'} in ${lang}: ${chunk}` }] }],
+                    // Обычная скорость — только сам текст: служебная приписка («Read naturally in …:») иногда зачитывалась вслух.
+                    // Для медленной речи указание нужно, поэтому оно короткое и отделено от текста
+                    contents: [{ parts: [{ text: slow ? `Say slowly and clearly, with short pauses between phrases:\n${chunk}` : chunk }] }],
                     generationConfig: {
                         responseModalities: ["AUDIO"],
                         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
