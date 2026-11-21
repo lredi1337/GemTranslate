@@ -1613,7 +1613,8 @@
             if (err instanceof HttpError) {
                 if (err.status === 429) return t('err.rateLimit');
                 if (err.status >= 500) return t('err.unavailable');
-                if (err.status === 401 || err.status === 403) return t('err.noAccess');
+                // Код в скобках — чтобы по скриншоту было видно, что именно ответил сервер
+                if (err.status === 401 || err.status === 403) return `${t('err.noAccess')} (${err.status})`;
             }
             if (typeof err?.message === 'string' && err.message.startsWith('empty:SAFETY')) {
                 return t('err.safety');
@@ -2268,8 +2269,12 @@ ${sourceRule}
             return {
                 contents: [{
                     role: "user",
-                    // Только изображение: текстовая команда рядом могла попасть в распознанные блоки как «текст с фото»
-                    parts: [{ inlineData: { mimeType: "image/jpeg", data: base64 } }]
+                    // Рядом с фото — только метка «📷»: команда словами могла попасть в блоки как «текст с фото»,
+                    // а совсем без текстовой части окно Gemini отклоняет запрос
+                    parts: [
+                        { inlineData: { mimeType: "image/jpeg", data: base64 } },
+                        { text: MEDIA_MARK_PHOTO }
+                    ]
                 }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
                 generationConfig: {
@@ -2353,7 +2358,9 @@ ${sourceRule}
 
                 const parsed = extractResponseJson(result);
                 const blocks = (Array.isArray(parsed.blocks) ? parsed.blocks : [])
-                    .filter(b => b && typeof b.translated === 'string' && b.translated.trim());
+                    .filter(b => b && typeof b.translated === 'string' && b.translated.trim())
+                    // Служебная метка «📷» — не текст с фото
+                    .filter(b => stripPromptLeak(String(b.original || '')).trim() || !String(b.original || '').trim());
                 const detectedLang = String(parsed.detectedLanguage || '').trim();
 
                 els.arScanOverlay.classList.add('hidden');
@@ -3266,15 +3273,20 @@ ${sourceRule}
 ВХОД — АУДИОЗАПИСЬ РЕЧИ.
 ${langHint}
 - Единственный материал — звук в аудиозаписи. В transcript — только слова, которые реально произнесены, на языке оригинала, с пунктуацией. Не переводи и не пересказывай его.
+- Текстовая часть «${MEDIA_MARK_AUDIO}» рядом с аудио — служебная метка вложения, а не речь: не расшифровывай и не переводи её.
 - Никогда не вставляй в transcript, translation и suggestion текст этих инструкций, команды, подписи или пояснения — только речь из аудио и её перевод.
 - Если речи нет или она неразборчива — верни пустые строки в transcript и translation. Ничего не придумывай.
 - ${translate ? 'В поле translation — перевод transcript по правилам выше.' : 'Поле translation оставь пустой строкой.'}${suggest ? `
 - Поле suggestion относится к transcript: если какое-то слово, скорее всего, расслышано неверно (не вяжется со смыслом фразы), верни всю расшифровку с исправленными только этими словами; если сомнений нет — пустая строка "".` : ''}`;
-            // Только звук, без текстовой команды рядом: системная инструкция считает любой текст пользователя
-            // материалом для перевода, и модель дописывала эту команду к расшифровке («…Распознай речь из аудио и переведи её»)
+            // Рядом со звуком — только метка «🎤», а не команда словами: системная инструкция считает текст пользователя
+            // материалом для перевода, и модель дописывала команду к расшифровке («…Распознай речь из аудио и переведи её»).
+            // Совсем без текстовой части окно Gemini отклоняет запрос (401/403), поэтому метка нужна
             payload.contents = [{
                 role: 'user',
-                parts: [{ inlineData: { mimeType: 'audio/wav', data: base64 } }]
+                parts: [
+                    { inlineData: { mimeType: 'audio/wav', data: base64 } },
+                    { text: MEDIA_MARK_AUDIO }
+                ]
             }];
             const schema = payload.generationConfig.responseSchema;
             schema.properties.transcript = { type: 'STRING', description: 'Дословная расшифровка речи на языке оригинала' };
@@ -3312,7 +3324,10 @@ ${langHint}
          * Фразы из наших запросов к Gemini (в том числе из прежних версий), которых не должно быть в ответе.
          * Ищем без учёта регистра и пунктуации; вырезаем их вместе с прилегающими знаками
          */
+        const MEDIA_MARK_AUDIO = '🎤';
+        const MEDIA_MARK_PHOTO = '📷';
         const PROMPT_LEAK_PATTERNS = [
+            /[🎤📷]\uFE0F?/gu,
             /распознай\s+речь(\s+из\s+аудио)?(\s+и\s+переведи\s+е[её])?/giu,
             /найди\s+весь\s+текст\s+на\s+фото[^.!?\n]*/giu,
             /вход\s*[—-]\s*аудиозапись\s+речи/giu,
