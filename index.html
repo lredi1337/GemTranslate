@@ -150,6 +150,29 @@
         /* Микрофон можно зажимать: без прокрутки, системного меню и выделения */
         #mic-btn, #dialog-mic-a, #dialog-mic-b { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
+        /* Планшет и компьютер: переписка и микрофоны — колонкой по центру, а не по краям широкого экрана */
+        @media (min-width: 768px) {
+            #dialog-messages, #dialog-form, #dialog-mics, #dialog-edit-bar { width: 100%; max-width: 40rem; margin-left: auto; margin-right: auto; }
+        }
+
+        /* Первый запуск на новом языке интерфейса: заставка, пока Gemini переводит надписи */
+        #app-root { transition: opacity 200ms ease; }
+        body.ui-loading #app-root { opacity: 0; }
+        body.ui-loading::after {
+            content: ''; position: fixed; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px;
+            border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.15); border-top-color: #4C8BF5;
+            animation: uiSpin 0.8s linear infinite;
+        }
+        @keyframes uiSpin { to { transform: rotate(360deg); } }
+
+        /* Узкий экран (320–359 px): названия языков чуть мельче, чтобы «Определить язык» помещалось целиком */
+        @media (max-width: 359px) {
+            #control-panel { padding-left: 0.75rem; padding-right: 0.75rem; }
+            #lang-header { gap: 0.25rem; }
+            #lang-header > button[id$="-lang-btn"] { font-size: 13.5px; padding-left: 0.375rem; padding-right: 0.375rem; letter-spacing: -0.01em; }
+            #swap-btn { width: 2rem; }
+        }
+
         /* Телефон боком (по пропорциям, а не orientation — открытая клавиатура в портрете не должна включать этот режим): высоты мало — языки и кнопки собираем в одну строку под текстом,
            чтобы текст и перевод получили почти весь экран */
         @media (min-aspect-ratio: 3/2) and (max-height: 520px) {
@@ -671,7 +694,15 @@
 
         const REQUEST_TIMEOUT_MS = 30000;
         const PHOTO_TIMEOUT_MS = 60000;
-        const DEBOUNCE_MS = 550;
+        /**
+         * Пауза перед автопереводом при наборе. Короткая после конца предложения, длиннее посреди слова —
+         * чтобы обычные паузы между словами не отправляли недописанные куски (лишние запросы и мигание).
+         */
+        function typingDebounceMs(text) {
+            if (/[.!?…。！？]\s*$/.test(text)) return 350;
+            if (/[\s,;:]$/.test(text)) return 900;
+            return 1200;
+        }
         const HISTORY_LIMIT = 50;           // обычных записей; избранное хранится без ограничения
         const STRIP_LIMIT = 15;             // недавних переводов под пустым полем
         const STREAM_IDLE_TIMEOUT_MS = 20000;
@@ -1073,7 +1104,7 @@
             ru: {
                 'app.title': 'AI Переводчик',
                 'close': 'Закрыть', 'send': 'Отправить', 'clear': 'Очистить', 'copy': 'Копировать', 'copied': 'Скопировано',
-                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'toTranslation': 'К переводу', 'undo': 'Отменить', 'history.deleted': 'Запись удалена', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
+                'delete': 'Удалить', 'cancel': 'Отмена', 'retry': 'Повторить', 'rec.busy': 'Секунду — распознаю прошлую запись', 'toTranslation': 'К переводу', 'undo': 'Отменить', 'history.deleted': 'Запись удалена', 'voice.failed': '🎤 Запись не обработана: {error}', 'voice.retrying': '🎤 Отправляю запись ещё раз…', 'voice.willRetry': ' Отправлю сам, когда появится интернет.', 'all': 'Все', 'history': 'История',
                 'original': 'Оригинал', 'translation': 'Перевод', 'translating': 'Перевод...', 'auto': 'Авто',
                 'detectLang': 'Определить язык', 'detected': 'Определен: {lang}', 'didYouMean': 'Возможно, вы имели в виду:', 'recent': 'Недавние',
                 'input.placeholder': 'Введите текст', 'input.aria': 'Исходный текст', 'speakNow': 'Говорите…',
@@ -1136,7 +1167,7 @@
             en: {
                 'app.title': 'AI Translator',
                 'close': 'Close', 'send': 'Send', 'clear': 'Clear', 'copy': 'Copy', 'copied': 'Copied',
-                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'toTranslation': 'To translation', 'undo': 'Undo', 'history.deleted': 'Entry deleted', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
+                'delete': 'Delete', 'cancel': 'Cancel', 'retry': 'Retry', 'rec.busy': 'One moment — still recognizing the last recording', 'toTranslation': 'To translation', 'undo': 'Undo', 'history.deleted': 'Entry deleted', 'voice.failed': '🎤 Recording not processed: {error}', 'voice.retrying': '🎤 Sending the recording again…', 'voice.willRetry': ' It will be sent once you are back online.', 'all': 'All', 'history': 'History',
                 'original': 'Original', 'translation': 'Translation', 'translating': 'Translating…', 'auto': 'Auto',
                 'detectLang': 'Detect language', 'detected': 'Detected: {lang}', 'didYouMean': 'Did you mean:', 'recent': 'Recent',
                 'input.placeholder': 'Enter text', 'input.aria': 'Source text', 'speakNow': 'Speak…',
@@ -1211,13 +1242,18 @@
 
         let uiStrings = UI_STRINGS[UI_TAG] || UI_STRINGS[UI_BASE] || null;
         let uiNeedsTranslation = false;
+        let uiFirstRun = false;
         if (!uiStrings) {
             const cached = storage.get(STORAGE_KEYS.uiStrings, {})?.[UI_TAG];
-            if (cached && cached.version === UI_STRINGS_VERSION && cached.strings) {
+            if (cached?.strings) {
+                // После обновления приложения прежний перевод показываем сразу (новых строк в нём нет — они
+                // временно по-английски), а свежий перевод тихо загружаем в фоне. Без «моргания» английским
                 uiStrings = cached.strings;
+                uiNeedsTranslation = cached.version !== UI_STRINGS_VERSION;
             } else {
                 uiStrings = UI_STRINGS.en;
                 uiNeedsTranslation = true;
+                uiFirstRun = true;
             }
         }
 
@@ -2166,10 +2202,17 @@
                 const box = normalizeBox(b.box);
                 if (!b.translated || !box) continue;
 
-                const topPct = Math.min(98, box.ymin / 10);
-                const leftPct = Math.min(98, box.xmin / 10);
-                const heightPct = Math.max(2.2, Math.min(100 - topPct, (box.ymax - box.ymin) / 10));
-                const widthPct = Math.max(4, Math.min(100 - leftPct, (box.xmax - box.xmin) / 10));
+                // Рамки от Gemini бывают впритык: диакритика над строкой (ẫ, ố) и хвосты букв торчали из-под плашки.
+                // Расширяем: сверху заметно (там надстрочные знаки), снизу и по бокам — немного
+                const boxH = box.ymax - box.ymin;
+                const ymin = Math.max(0, box.ymin - Math.max(6, boxH * 0.22));
+                const ymax = Math.min(1000, box.ymax + Math.max(3, boxH * 0.1));
+                const xmin = Math.max(0, box.xmin - 4);
+                const xmax = Math.min(1000, box.xmax + 4);
+                const topPct = Math.min(98, ymin / 10);
+                const leftPct = Math.min(98, xmin / 10);
+                const heightPct = Math.max(2.2, Math.min(100 - topPct, (ymax - ymin) / 10));
+                const widthPct = Math.max(4, Math.min(100 - leftPct, (xmax - xmin) / 10));
 
                 // Размер шрифта подбирается и по высоте, и по ширине блока
                 const boxPxH = (heightPct / 100) * imgH;
@@ -3110,13 +3153,14 @@ ${sourceRule}
          *  • тап — запись началась, повторный тап — закончить;
          *  • зажал — запись идёт, пока держишь; отпустил — фраза уходит на перевод.
          */
-        function bindMicButton(btn, { isIdle, isBusy, start, finish, canHold = () => true }) {
+        function bindMicButton(btn, { isIdle, isBusy, start, finish, canHold = () => true, onBusy = () => {} }) {
             let pressAt = 0;
             let startedByPress = false;
             let ignoreClickUntil = 0;
 
             btn.addEventListener('pointerdown', (e) => {
                 if (e.button || isBusy() || !isIdle()) return;
+                ignoreClickUntil = 0;
                 // Пока нет разрешения или звук ещё не «прогрет», запись начнётся по отпусканию пальца (click):
                 // иначе окно разрешения закроется, как только палец уйдёт с экрана
                 if (!canHold()) return;
@@ -3130,6 +3174,7 @@ ${sourceRule}
             const release = () => {
                 if (!startedByPress) return;
                 startedByPress = false;
+                // Пропускаем только click от этого же касания (он придёт сразу); следующий быстрый тап уже остановит запись
                 ignoreClickUntil = Date.now() + 400;
                 if (Date.now() - pressAt >= MIC_HOLD_MS) finish();
             };
@@ -3138,7 +3183,14 @@ ${sourceRule}
 
             // Тап во время записи (и нажатие с клавиатуры) — закончить; с клавиатуры в покое — начать
             btn.addEventListener('click', () => {
-                if (Date.now() < ignoreClickUntil || isBusy()) return;
+                if (Date.now() < ignoreClickUntil) {
+                    ignoreClickUntil = 0; // click от касания, которое начало запись, — один раз
+                    return;
+                }
+                if (isBusy()) {
+                    onBusy(); // нажатие не теряется молча: говорим, что прошлая запись ещё распознаётся
+                    return;
+                }
                 if (isIdle()) start();
                 else finish();
             });
@@ -3260,7 +3312,8 @@ ${langHint}
                 isBusy: () => micMode === 'finishing', // уже останавливаемся — новая запись не начинается
                 start: () => startMainVoice(),
                 finish: () => finishMainVoice(),
-                canHold: canHoldMic
+                canHold: canHoldMic,
+                onBusy: () => showToast(t('rec.busy'), 'info')
             });
 
             async function startMainVoice() {
@@ -3491,19 +3544,32 @@ ${langHint}
             if (state.isSpeaking) setSpeakingUI(false);
         }
 
-        async function playAudioUrl(url, id) {
-            const audio = audioPlayer;
-            audio.onended = null;
-            audio.onerror = null;
-            audio.src = url;
-            currentAudioEl = audio;
-            const done = () => {
-                if (currentAudioEl === audio) currentAudioEl = null;
-                if (ttsReq.isCurrent(id)) setSpeakingUI(false);
-            };
-            audio.onended = done;
-            audio.onerror = done;
-            await audio.play();
+        /** Сыграть один кусок озвучки; промис завершается, когда звук доиграл */
+        function playAudioUrl(url) {
+            return new Promise((resolve, reject) => {
+                const audio = audioPlayer;
+                audio.onended = () => resolve();
+                audio.onerror = () => reject(new Error('audio playback failed'));
+                audio.src = url;
+                currentAudioEl = audio;
+                audio.play().catch(reject);
+            });
+        }
+
+        /** Длинный текст — на куски до MAX_TTS_CHARS по границам предложений: озвучиваем всё, а не только начало */
+        function splitForSpeech(text, max = MAX_TTS_CHARS) {
+            const parts = [];
+            let rest = text.trim();
+            while (rest.length > max) {
+                const slice = rest.slice(0, max);
+                let cut = Math.max(...['. ', '! ', '? ', '… ', '\n', '。', '！', '？'].map(mark => slice.lastIndexOf(mark)));
+                if (cut < max * 0.4) cut = slice.lastIndexOf(' ');
+                if (cut < max * 0.4) cut = max - 1;
+                parts.push(rest.slice(0, cut + 1).trim());
+                rest = rest.slice(cut + 1).trim();
+            }
+            if (rest) parts.push(rest);
+            return parts;
         }
 
         function speakWithBrowser(text, lang, id) {
@@ -3539,42 +3605,57 @@ ${langHint}
             setSpeakingUI(true, fromMain);
             const { id, signal } = ttsReq.begin();
             const slow = state.slowSpeech;
-            const textToSpeak = text.slice(0, MAX_TTS_CHARS);
-            const cacheKey = `${lang}\u0001${slow ? 1 : 0}\u0001${textToSpeak}`;
+            const chunks = splitForSpeech(text);
 
+            const fetchChunk = async (chunk) => {
+                const cacheKey = `${lang}\u0001${slow ? 1 : 0}\u0001${chunk}`;
+                const cached = ttsCache.get(cacheKey);
+                if (cached) return cached;
+                const payload = {
+                    contents: [{ parts: [{ text: `${slow ? 'Read slowly and clearly, pausing between phrases,' : 'Read naturally'} in ${lang}: ${chunk}` }] }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
+                    }
+                };
+                const result = await callGemini(TTS_MODEL_NAME, payload, { retries: 1, signal });
+                const part = (result?.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.data);
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType || '';
+                if (!audioData || !mimeType.startsWith('audio/')) throw new Error('no audio');
+                const rateMatch = mimeType.match(/rate=(\d+)/);
+                const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+                const url = URL.createObjectURL(pcm16ToWavBlob(audioData, sampleRate));
+                ttsCache.set(cacheKey, url);
+                return url;
+            };
+
+            let played = 0;
             try {
-                let audioUrl = ttsCache.get(cacheKey);
-                if (!audioUrl) {
-                    const payload = {
-                        contents: [{ parts: [{ text: `${slow ? 'Read slowly and clearly, pausing between phrases,' : 'Read naturally'} in ${lang}: ${textToSpeak}` }] }],
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
-                        }
-                    };
-                    const result = await callGemini(TTS_MODEL_NAME, payload, { retries: 1, signal });
+                // Следующий кусок готовим, пока звучит текущий — паузы между ними почти нет
+                let next = fetchChunk(chunks[0]);
+                for (let i = 0; i < chunks.length; i++) {
+                    const url = await next;
                     if (!ttsReq.isCurrent(id)) return;
-
-                    const part = (result?.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.data);
-                    const audioData = part?.inlineData?.data;
-                    const mimeType = part?.inlineData?.mimeType || '';
-                    if (!audioData || !mimeType.startsWith('audio/')) throw new Error('no audio');
-
-                    const rateMatch = mimeType.match(/rate=(\d+)/);
-                    const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
-                    audioUrl = URL.createObjectURL(pcm16ToWavBlob(audioData, sampleRate));
-                    ttsCache.set(cacheKey, audioUrl);
+                    if (i + 1 < chunks.length) {
+                        next = fetchChunk(chunks[i + 1]);
+                        next.catch(() => {}); // ошибку разберём, когда до этого куска дойдёт очередь
+                    }
+                    await playAudioUrl(url);
+                    played = i + 1;
+                    if (!ttsReq.isCurrent(id)) return;
                 }
-
-                if (!ttsReq.isCurrent(id)) return;
-                await playAudioUrl(audioUrl, id);
+                if (ttsReq.isCurrent(id)) {
+                    currentAudioEl = null;
+                    setSpeakingUI(false);
+                }
                 return;
             } catch (err) {
                 if (!ttsReq.isCurrent(id) || isAbort(err)) return;
             }
 
-            // Запасной вариант: встроенный синтез речи браузера
-            speakWithBrowser(textToSpeak, lang, id);
+            // Запасной вариант: встроенный синтез речи браузера — с того места, где остановились
+            speakWithBrowser(chunks.slice(played).join(' '), lang, id);
         }
 
         /* =========================================================
@@ -3853,14 +3934,22 @@ ${langHint}
                     resetTranslationOutput();
                     return;
                 }
-                debounceTimer = setTimeout(translateText, DEBOUNCE_MS);
+                debounceTimer = setTimeout(translateText, typingDebounceMs(els.sourceText.value));
             });
 
             // Немедленный перевод по Enter (без Shift). Во время набора через IME (китайский, японский, вьетнамский)
             // Enter подтверждает ввод иероглифов — его не перехватываем.
+            // Enter — перевести сразу; ещё один Enter подряд (текст не менялся) — перенос строки:
+            // на телефоне нет Shift+Enter, а адрес или список иначе не набрать
+            let enterTranslatedValue = null;
             els.sourceText.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+                    if (els.sourceText.value === enterTranslatedValue && els.sourceText.value.trim()) {
+                        enterTranslatedValue = null;
+                        return; // перенос строки
+                    }
                     e.preventDefault();
+                    enterTranslatedValue = els.sourceText.value;
                     translateText();
                 }
             });
@@ -4399,7 +4488,8 @@ ${langHint}
                     isBusy: () => !!state.dialog.finishingSide,
                     start: () => toggleDialogListening(side),
                     finish: () => finishDialogVoice(side),
-                    canHold: canHoldMic
+                    canHold: canHoldMic,
+                    onBusy: () => showToast(t('rec.busy'), 'info')
                 });
                 langBtn.addEventListener('click', () => openLanguageModal(side === 'a' ? 'dialogA' : 'dialogB'));
                 // Поле ввода общее: голос дописывается к набранному тексту той стороны, что говорит
@@ -5334,7 +5424,17 @@ ${langHint}
             setupVoiceInput();
             initEvents();
             initExtraEvents();
-            if (uiNeedsTranslation) translateUiStrings();
+            if (uiNeedsTranslation) {
+                // Самый первый запуск: пару секунд показываем заставку, а не английский интерфейс, который тут же сменится
+                if (uiFirstRun) {
+                    document.body.classList.add('ui-loading');
+                    const reveal = () => document.body.classList.remove('ui-loading');
+                    const timer = setTimeout(reveal, 4000); // долго — показываем по-английски, перевод подменит позже
+                    translateUiStrings().finally(() => { clearTimeout(timer); reveal(); });
+                } else {
+                    translateUiStrings();
+                }
+            }
             updateDialogKeyboardReserve(); // запоминаем высоту окна без клавиатуры
         }
 
