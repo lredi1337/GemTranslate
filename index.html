@@ -2081,13 +2081,10 @@
             }
 
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: 'environment' },
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
-                    audio: false
+                const stream = await requestCameraStream({
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
                 });
                 // Пользователь мог закрыть камеру или уже выбрать фото, пока ждали разрешения
                 // Пока ждали разрешения: камеру закрыли, выбрали фото или нажали «Новый снимок» ещё раз
@@ -3021,6 +3018,60 @@ ${sourceRule}
         }
 
         /** Диктофон: пишет звук с микрофона, пока не остановят, паузы ему не важны */
+        const MIC_CONSTRAINTS = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+        let combinedPermissionTried = false;
+
+        /** Разрешение в каком состоянии: 'granted' | 'denied' | 'prompt' | null (браузер не говорит) */
+        async function permissionState(name) {
+            try { return (await navigator.permissions?.query({ name }))?.state || null; } catch { return null; }
+        }
+
+        /**
+         * Микрофон для записи. В первый раз за сеанс, если доступ к камере ещё не дан, просим камеру и микрофон
+         * одним окном — потом «Камера» откроется без второго разрешения. Камеру сразу выключаем: нужен был только доступ.
+         * Не вышло (камеру запретили, её нет или она занята) — просим только микрофон, как раньше
+         */
+        async function requestMicStream() {
+            if (!combinedPermissionTried) {
+                combinedPermissionTried = true;
+                const [mic, cam] = await Promise.all([permissionState('microphone'), permissionState('camera')]);
+                // Микрофон уже разрешён — окна не будет, и камеру просить незачем; камера уже решена — тоже
+                const worth = mic !== 'granted' && cam !== 'granted' && cam !== 'denied';
+                let hasCamera = true;
+                try { hasCamera = (await navigator.mediaDevices.enumerateDevices()).some(d => d.kind === 'videoinput'); } catch {}
+                if (worth && hasCamera) {
+                    try {
+                        const both = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS, video: { facingMode: { ideal: 'environment' } } });
+                        both.getVideoTracks().forEach(t => t.stop());
+                        const audioTracks = both.getAudioTracks();
+                        if (audioTracks.length) return new MediaStream(audioTracks);
+                    } catch (err) {
+                        if (err?.name === 'AbortError') throw err;
+                        // Отказ или камера недоступна — дальше обычный запрос одного микрофона
+                    }
+                }
+            }
+            return navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS });
+        }
+
+        /** Камера; в первый раз за сеанс — вместе с микрофоном одним окном (звук сразу выключаем) */
+        async function requestCameraStream(video) {
+            if (!combinedPermissionTried) {
+                combinedPermissionTried = true;
+                const [mic, cam] = await Promise.all([permissionState('microphone'), permissionState('camera')]);
+                if (cam !== 'granted' && mic !== 'granted' && mic !== 'denied') {
+                    try {
+                        const both = await navigator.mediaDevices.getUserMedia({ video, audio: MIC_CONSTRAINTS });
+                        both.getAudioTracks().forEach(t => { t.stop(); both.removeTrack(t); });
+                        if (both.getVideoTracks().length) return both;
+                    } catch (err) {
+                        if (err?.name === 'AbortError') throw err;
+                    }
+                }
+            }
+            return navigator.mediaDevices.getUserMedia({ video, audio: false });
+        }
+
         function createAudioRecorder({ onLevel, onMaxDuration, onLive, onStall }) {
             let active = false;
             let ctx = null, stream = null, source = null, node = null;
@@ -3053,9 +3104,7 @@ ${sourceRule}
                     gotAudio = false;
                     chunks = []; length = 0; peak = 0;
                     // Окно разрешения могло закрыться само, и запрос тогда «висит» — не ждём вечно
-                    const request = navigator.mediaDevices.getUserMedia({
-                        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-                    });
+                    const request = requestMicStream();
                     let permTimer = null;
                     const timeout = new Promise((_, reject) => {
                         permTimer = setTimeout(() => {
