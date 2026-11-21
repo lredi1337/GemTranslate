@@ -124,10 +124,17 @@
         /* Окно Gemini не сообщает о клавиатуре и при её появлении просто сдвигает всё приложение вверх,
            пряча шапку и сообщения. Поэтому сами поднимаем строку ввода над местом клавиатуры —
            сдвигать становится нечего, а микрофоны остаются в зарезервированной зоне под клавиатурой */
-        #dialog-modal.kb-reserve { padding-bottom: var(--kb-reserve, 0px) !important; }
-        #dialog-modal.kb-reserve #dialog-mics {
+        /* На телефоне микрофоны всегда «пристёгнуты» к низу, а строка ввода стоит над полосой высотой --dock-h.
+           Без клавиатуры полоса = высота микрофонов, при наборе — высота клавиатуры. Полоса меняется плавно,
+           с той же скоростью, что выезжает клавиатура, поэтому строка ввода едет вместе с ней, а не прыгает заранее */
+        #dialog-modal.mics-docked {
+            padding-bottom: var(--dock-h, 0px) !important;
+            transition: padding-bottom 220ms cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #dialog-modal.mics-docked.kb-reserve { transition: padding-bottom 300ms cubic-bezier(0.2, 0, 0, 1) 30ms; }
+        #dialog-modal.mics-docked #dialog-mics {
             position: absolute; left: 0; right: 0; bottom: 0;
-            height: var(--kb-reserve, 0px);
+            height: var(--dock-h, 0px);
             align-content: end;
             padding-bottom: max(1rem, env(safe-area-inset-bottom));
         }
@@ -934,6 +941,7 @@
             dialogEditLabel: document.getElementById('dialog-edit-label'),
             dialogMessages: document.getElementById('dialog-messages'),
             dialogForm: document.getElementById('dialog-form'),
+            dialogMics: document.getElementById('dialog-mics'),
             dialogInput: document.getElementById('dialog-input'),
             dialogTypeSide: document.getElementById('dialog-type-side'),
             dialogAutoSpeakTrack: document.getElementById('dialog-autospeak-track'),
@@ -1799,12 +1807,49 @@
                     reserve = Math.round(Math.min(screenH * 0.47, inner * 0.6));         // окно молчит — примерная высота
                 }
             }
-            const changed = modal.classList.contains('kb-reserve') !== reserve > 0
-                || modal.style.getPropertyValue('--kb-reserve') !== `${reserve}px`;
+            const wasReserved = modal.classList.contains('kb-reserve');
             modal.classList.toggle('kb-reserve', reserve > 0);
-            modal.style.setProperty('--kb-reserve', `${reserve}px`);
-            // Последние сообщения должны остаться видны над строкой ввода
-            if (changed && typingInDialog) requestAnimationFrame(() => { els.dialogLog.scrollTop = els.dialogLog.scrollHeight; });
+
+            // Высота полосы внизу: под клавиатуру или под микрофоны (если они видны)
+            const docked = IS_TOUCH && isDialogOpen();
+            let dock = 0;
+            if (docked) {
+                modal.classList.add('mics-docked');
+                const mics = els.dialogMics;
+                if (getComputedStyle(mics).display !== 'none') {
+                    const cs = getComputedStyle(mics);
+                    const micsH = Math.ceil(mics.firstElementChild.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom));
+                    dock = Math.max(reserve, micsH);
+                } else {
+                    dock = reserve;
+                }
+            } else {
+                modal.classList.remove('mics-docked');
+            }
+            const changed = wasReserved !== reserve > 0 || modal.style.getPropertyValue('--dock-h') !== `${dock}px`;
+            modal.style.setProperty('--dock-h', `${dock}px`);
+            // Последние сообщения должны остаться видны над строкой ввода — и во время, и после сдвига
+            if (changed && typingInDialog) {
+                const toBottom = () => { els.dialogLog.scrollTop = els.dialogLog.scrollHeight; };
+                requestAnimationFrame(toBottom);
+                setTimeout(toBottom, 360);
+            }
+        }
+
+        /**
+         * Клавиатуру закрыли кнопкой «назад»: курсор остался в поле, а окно Gemini об этом не сообщает.
+         * Но пока клавиатура открыта, нажать на место под строкой ввода нельзя — там клавиатура.
+         * Значит, касание там = клавиатуры уже нет: снимаем фокус, полоса уезжает вниз.
+         * Тап по пустому месту ленты тоже убирает клавиатуру (как в мессенджерах).
+         */
+        function setupDialogKeyboardDismiss() {
+            els.dialogModal.addEventListener('pointerdown', (e) => {
+                if (!IS_TOUCH || document.activeElement !== els.dialogInput) return;
+                const belowComposer = els.dialogModal.classList.contains('kb-reserve')
+                    && e.clientY > els.dialogForm.getBoundingClientRect().bottom;
+                const emptyLog = e.target === els.dialogLog || e.target === els.dialogMessages;
+                if (belowComposer || emptyLog) els.dialogInput.blur();
+            }, true);
         }
 
         function setupViewportAdapter() {
@@ -1840,8 +1885,10 @@
                 setTimeout(syncViewportLayout, 80);
                 setTimeout(syncViewportLayout, 350);
             });
-            document.addEventListener('focusout', () => {
-                // Панель возвращаем чуть позже: иначе она появится посреди тапа, сдвинет кнопки и тап промахнётся
+            document.addEventListener('focusout', (e) => {
+                // Панель возвращаем чуть позже: иначе она появится посреди тапа, сдвинет кнопки и тап промахнётся.
+                // В диалоге микрофоны стоят на месте, а строка ввода должна уезжать вместе с клавиатурой — сразу
+                if (e.target === els.dialogInput) setTimeout(() => { if (document.activeElement !== els.dialogInput) syncTypingState(); }, 0);
                 setTimeout(syncTypingState, 250);
                 setTimeout(syncViewportLayout, 150);
             });
@@ -5015,6 +5062,11 @@ ${langHint}
             stopSpeaking();
             dialogAbort = new AbortController();
             els.dialogModal.classList.remove('hidden');
+            // Сразу ставим микрофоны на место, без анимации при открытии окна
+            els.dialogModal.style.transition = 'none';
+            updateDialogKeyboardReserve();
+            void els.dialogModal.offsetHeight;
+            els.dialogModal.style.transition = '';
             renderDialog();
         }
 
@@ -5277,6 +5329,7 @@ ${langHint}
             syncLanguageUI();
             initDialog();
             setupViewportAdapter();
+            setupDialogKeyboardDismiss();
             loadHistory();
             setupVoiceInput();
             initEvents();
