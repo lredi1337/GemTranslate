@@ -103,10 +103,17 @@
            Без клавиатуры полоса = высота микрофонов, при наборе — высота клавиатуры. Полоса меняется плавно,
            с той же скоростью, что выезжает клавиатура, поэтому строка ввода едет вместе с ней, а не прыгает заранее */
         #dialog-modal.mics-docked {
+            padding-top: var(--pan-top, 0px);
             padding-bottom: var(--dock-h, 0px) !important;
-            transition: padding-bottom 220ms cubic-bezier(0.4, 0, 0.2, 1);
+            /* Клавиатура уезжает с ускорением — строка ввода опускается так же */
+            transition: padding-bottom 200ms cubic-bezier(0.4, 0, 1, 1);
         }
-        #dialog-modal.mics-docked.kb-reserve { transition: padding-bottom 300ms cubic-bezier(0.2, 0, 0, 1) 30ms; }
+        /* Подъём начинается с касания поля и заканчивается раньше, чем окно Gemini решит «подвинуть» приложение:
+           если в этот момент поле ещё внизу, Gemini сдвигает весь Canvas вверх и шапка уезжает за экран */
+        #dialog-modal.mics-docked.kb-reserve { transition: padding-bottom 200ms cubic-bezier(0.2, 0, 0, 1); }
+        #dialog-modal.no-anim { transition: none !important; }
+        /* Gemini всё же сдвинул окно: микрофоны оказались бы между полем и клавиатурой — прячем */
+        #dialog-modal.panned #dialog-mics { visibility: hidden; }
         #dialog-modal.mics-docked #dialog-mics {
             position: absolute; left: 0; right: 0; bottom: 0;
             height: var(--dock-h, 0px);
@@ -1893,9 +1900,17 @@
         let maxSeenHeight = 0;
         let maxSeenWidth = 0;
 
+        // Палец коснулся поля ввода: клавиатура вот-вот появится — поднимаем строку ввода заранее
+        let dialogKbIntent = false;
+        let dialogKbIntentTimer = null;
+        // На сколько окно Gemini сдвинуло приложение вверх (видно по IntersectionObserver), и сколько было без набора
+        let hostPan = 0;
+        let hostPanBase = 0;
+
         function updateDialogKeyboardReserve() {
             const modal = els.dialogModal;
-            const typingInDialog = IS_TOUCH && isDialogOpen() && document.activeElement === els.dialogInput;
+            const focused = document.activeElement === els.dialogInput;
+            const typingInDialog = IS_TOUCH && isDialogOpen() && (focused || dialogKbIntent);
             let reserve = 0;
             // Самая большая высота окна, что мы видели (при повороте экрана — заново): не доверяем только screen.height
             if (window.innerWidth !== maxSeenWidth) {
@@ -1915,7 +1930,20 @@
                 }
             }
             const wasReserved = modal.classList.contains('kb-reserve');
+            // Фокус пришёл без касания (например, «Редактировать» из меню) — заранее подняться не успели:
+            // ставим строку сразу на место, иначе Gemini сдвинет окно
+            if (reserve > 0 && !wasReserved && !dialogKbIntent) {
+                modal.classList.add('no-anim');
+                requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.remove('no-anim')));
+            }
             modal.classList.toggle('kb-reserve', reserve > 0);
+
+            // Сдвиг от Gemini возвращаем: сверху добавляем столько же, а снизу резервируем меньше —
+            // для глаза всё стоит так, как без сдвига: шапка видна, строка ввода над клавиатурой
+            const pan = reserve > 0 ? Math.max(0, Math.min(hostPan - hostPanBase, reserve)) : 0;
+            modal.style.setProperty('--pan-top', `${pan}px`);
+            modal.classList.toggle('panned', pan > 0);
+            if (pan > 0) reserve -= pan;
 
             // Высота полосы внизу: под клавиатуру или под микрофоны (если они видны)
             const docked = IS_TOUCH && isDialogOpen();
@@ -1926,7 +1954,7 @@
                 if (getComputedStyle(mics).display !== 'none') {
                     const cs = getComputedStyle(mics);
                     const micsH = Math.ceil(mics.firstElementChild.offsetHeight + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom));
-                    dock = Math.max(reserve, micsH);
+                    dock = pan > 0 ? reserve : Math.max(reserve, micsH);
                 } else {
                     dock = reserve;
                 }
@@ -1949,6 +1977,76 @@
          * Значит, касание там = клавиатуры уже нет: снимаем фокус, полоса уезжает вниз.
          * Тап по пустому месту ленты тоже убирает клавиатуру (как в мессенджерах).
          */
+        /**
+         * Касание поля ввода в диалоге: начинаем подъём строки сразу, не дожидаясь клавиатуры.
+         * Поле уезжает из-под пальца, и браузер сам курсор уже не поставит — ставим его при отпускании пальца
+         * (это ответ на касание, поэтому клавиатура появляется как обычно)
+         */
+        function setupDialogKeyboardLead() {
+            const input = els.dialogInput;
+            let start = null;
+            const cancel = () => {
+                start = null;
+                clearTimeout(dialogKbIntentTimer);
+                if (dialogKbIntent && document.activeElement !== input) {
+                    dialogKbIntent = false;
+                    updateDialogKeyboardReserve();
+                }
+            };
+            input.addEventListener('touchstart', (e) => {
+                if (document.activeElement === input || e.touches.length !== 1) return;
+                e.preventDefault(); // сами решим, когда ставить курсор
+                start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                dialogKbIntent = true;
+                clearTimeout(dialogKbIntentTimer);
+                dialogKbIntentTimer = setTimeout(cancel, 1500); // палец так и не отпустили
+                updateDialogKeyboardReserve();
+            }, { passive: false });
+            input.addEventListener('touchmove', (e) => {
+                if (start && Math.hypot(e.touches[0].clientX - start.x, e.touches[0].clientY - start.y) > 12) cancel();
+            }, { passive: true });
+            input.addEventListener('touchcancel', cancel);
+            input.addEventListener('touchend', (e) => {
+                if (!start) return;
+                e.preventDefault();
+                start = null;
+                clearTimeout(dialogKbIntentTimer);
+                input.focus({ preventScroll: true });
+                const end = input.value.length;
+                try { input.setSelectionRange(end, end); } catch {}
+                // Дальше строку держит сам фокус
+                setTimeout(() => { dialogKbIntent = false; }, 0);
+            }, { passive: false });
+        }
+
+        /**
+         * Где приложение на экране: окно Gemini при появлении клавиатуры может сдвинуть весь Canvas вверх.
+         * Невидимая «линейка» у верхнего края показывает, сколько пикселей ушло за экран
+         */
+        function setupHostPanWatch() {
+            if (!('IntersectionObserver' in window)) return;
+            const RULER = 600;
+            const ruler = document.createElement('div');
+            ruler.setAttribute('aria-hidden', 'true');
+            ruler.style.cssText = `position:fixed;left:0;top:0;width:1px;height:${RULER}px;pointer-events:none;opacity:0;z-index:-1`;
+            document.body.appendChild(ruler);
+            const thresholds = Array.from({ length: RULER + 1 }, (_, i) => i / RULER);
+            new IntersectionObserver((entries) => {
+                const e = entries[entries.length - 1];
+                const hidden = e.isIntersecting ? Math.max(0, Math.round(e.intersectionRect.top - e.boundingClientRect.top)) : RULER;
+                const typing = els.dialogModal.classList.contains('kb-reserve');
+                if (!typing) hostPanBase = hidden;
+                const wasPanned = hostPan - hostPanBase > 0;
+                hostPan = hidden;
+                if (typing && wasPanned && hostPan - hostPanBase <= 0 && document.activeElement === els.dialogInput) {
+                    // Gemini вернул окно на место — значит, клавиатуру убрали («назад», свайп)
+                    els.dialogInput.blur();
+                    return;
+                }
+                if (typing) updateDialogKeyboardReserve();
+            }, { threshold: thresholds }).observe(ruler);
+        }
+
         function setupDialogKeyboardDismiss() {
             els.dialogModal.addEventListener('pointerdown', (e) => {
                 if (!IS_TOUCH || document.activeElement !== els.dialogInput) return;
@@ -5640,6 +5738,8 @@ ${langHint}
             initDialog();
             setupViewportAdapter();
             setupDialogKeyboardDismiss();
+            setupDialogKeyboardLead();
+            setupHostPanWatch();
             loadHistory();
             setupVoiceInput();
             initEvents();
