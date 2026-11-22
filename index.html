@@ -105,11 +105,18 @@
         #dialog-modal.mics-docked {
             padding-top: var(--pan-top, 0px);
             padding-bottom: var(--dock-h, 0px) !important;
-            /* Скорость и кривая — как у системной анимации клавиатуры Android 11+ (Samsung, Gboard):
-               285 мс, cubic-bezier(0.2, 0, 0, 1) и при появлении, и при скрытии */
-            transition: padding-bottom 285ms cubic-bezier(0.2, 0, 0, 1);
         }
-        #dialog-modal.no-anim { transition: none !important; }
+        /* Пока выезжает (или уезжает) клавиатура, строка ввода не едет сама по себе: она гаснет, место под клавиатуру
+           меняется сразу, а когда клавиатура встала — строка проявляется уже на новом месте, чуть всплывая снизу */
+        #dialog-form, #dialog-edit-bar {
+            transition: opacity 200ms ease-out, transform 260ms cubic-bezier(0.2, 0, 0, 1);
+        }
+        #dialog-modal.kb-hop #dialog-form,
+        #dialog-modal.kb-hop #dialog-edit-bar {
+            opacity: 0;
+            transform: translateY(14px);
+            transition: none;
+        }
         /* Gemini всё же сдвинул окно: микрофоны оказались бы между полем и клавиатурой — прячем */
         #dialog-modal.panned #dialog-mics { visibility: hidden; }
         #dialog-modal.mics-docked #dialog-mics {
@@ -1898,9 +1905,7 @@
         let maxSeenHeight = 0;
         let maxSeenWidth = 0;
 
-        // Курсор в поле поставил палец (а не код) — подъём анимируем вместе с клавиатурой
-        let dialogKbIntent = false;
-        let dialogKbIntentTimer = null;
+        let dialogHopTimer = null;
         // На сколько окно Gemini сдвинуло приложение вверх (видно по IntersectionObserver), и сколько было без набора
         let hostPan = 0;
         let hostPanBase = 0;
@@ -1928,11 +1933,13 @@
                 }
             }
             const wasReserved = modal.classList.contains('kb-reserve');
-            // Фокус пришёл без касания (например, «Редактировать» из меню) — заранее подняться не успели:
-            // ставим строку сразу на место, иначе Gemini сдвинет окно
-            if (reserve > 0 && !wasReserved && !dialogKbIntent) {
-                modal.classList.add('no-anim');
-                requestAnimationFrame(() => requestAnimationFrame(() => modal.classList.remove('no-anim')));
+            // Клавиатура появляется или уходит: строку прячем на время её анимации и показываем уже на новом месте.
+            // Место меняется сразу — к моменту, когда окно Gemini смотрит, где поле, оно уже над клавиатурой
+            if (IS_TOUCH && wasReserved !== reserve > 0) {
+                modal.classList.add('kb-hop');
+                clearTimeout(dialogHopTimer);
+                // ~285 мс анимации клавиатуры Android плюс её задержка на старте
+                dialogHopTimer = setTimeout(() => modal.classList.remove('kb-hop'), reserve > 0 ? 330 : 280);
             }
             modal.classList.toggle('kb-reserve', reserve > 0);
 
@@ -1975,23 +1982,6 @@
          * Значит, касание там = клавиатуры уже нет: снимаем фокус, полоса уезжает вниз.
          * Тап по пустому месту ленты тоже убирает клавиатуру (как в мессенджерах).
          */
-        /**
-         * Курсор в поле ставит палец — строка поднимается вместе с клавиатурой (анимация как у системы).
-         * Курсор поставил сам код (например, «Редактировать» из меню) — строку ставим на место сразу
-         */
-        function setupDialogKeyboardLead() {
-            els.dialogInput.addEventListener('touchstart', () => {
-                if (document.activeElement === els.dialogInput) return;
-                dialogKbIntent = true;
-                clearTimeout(dialogKbIntentTimer);
-                dialogKbIntentTimer = setTimeout(() => { dialogKbIntent = false; }, 1500);
-            }, { passive: true });
-            els.dialogInput.addEventListener('focus', () => {
-                clearTimeout(dialogKbIntentTimer);
-                setTimeout(() => { dialogKbIntent = false; }, 0);
-            });
-        }
-
         /**
          * Где приложение на экране: окно Gemini при появлении клавиатуры может сдвинуть весь Canvas вверх.
          * Невидимая «линейка» у верхнего края показывает, сколько пикселей ушло за экран
@@ -5711,7 +5701,6 @@ ${langHint}
             initDialog();
             setupViewportAdapter();
             setupDialogKeyboardDismiss();
-            setupDialogKeyboardLead();
             setupHostPanWatch();
             loadHistory();
             setupVoiceInput();
