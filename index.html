@@ -189,8 +189,11 @@
 
     <!-- Всплывающее уведомление (Toast) -->
     <!-- Невидимая кнопка для ярлыка-приложения «Переводчик» (Android): служба нажимает её сразу после открытия,
-         чтобы Gemini один раз спросил доступ к микрофону и камере. Только запрос доступа — без записи -->
-    <button id="perm-warmup" type="button" class="sr-only" tabindex="-1" aria-label="Подготовить микрофон и камеру">Подготовить микрофон и камеру</button>
+         чтобы Gemini один раз спросил доступ к микрофону и камере. Только запрос доступа — без записи.
+         Прозрачная полоска 3 px у левого края: служба может коснуться её «пальцем»; у края экрана касания
+         перехватывает жест «назад», так что случайно её не нажать -->
+    <button id="perm-warmup" type="button" tabindex="-1" aria-label="Подготовить микрофон и камеру"
+        style="position:fixed;left:0;top:30%;width:3px;height:40%;padding:0;margin:0;border:0;opacity:0;z-index:70;background:transparent;overflow:hidden;color:transparent;font-size:1px">Подготовить микрофон и камеру</button>
 
     <div id="toast" role="status" aria-live="polite" class="fixed top-20 left-1/2 -translate-x-1/2 z-[60] transform -translate-y-6 opacity-0 transition-all duration-200 pointer-events-none flex items-center gap-2 bg-[#2B2D31] border border-[#3A3D42] text-white px-3.5 py-2 rounded-full shadow-2xl text-xs font-medium whitespace-nowrap max-w-[92vw]">
         <span id="toast-icon" class="w-2 h-2 rounded-full bg-blue-400 inline-block shrink-0"></span>

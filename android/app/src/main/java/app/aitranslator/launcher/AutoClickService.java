@@ -32,6 +32,9 @@ public class AutoClickService extends AccessibilityService {
     private boolean openClicked;
     private boolean expanded;
     private long warmupAt;          // когда нажали скрытую кнопку «Подготовить микрофон и камеру»
+    private long expandedAt;
+    private boolean gestureTried;
+    private String warmupMethod = "";
     private String expandResult = "";
     private String openedLabel = "";
     private long lastClickAt;
@@ -71,8 +74,8 @@ public class AutoClickService extends AccessibilityService {
                 if (p.getString(Prefs.LAST_RESULT, "").startsWith("Запущено")) {
                     if (expanded) {
                         Prefs.disarm(this, expandResult + (warmupAt > 0
-                                ? "; окно разрешений не появилось — похоже, доступ уже есть"
-                                : "; кнопка подготовки микрофона не найдена — обновите код переводчика в Canvas"));
+                                ? "; окно разрешений не появилось (" + warmupMethod + ")"
+                                : "; кнопка подготовки микрофона не найдена и касание не удалось — обновите код переводчика в Canvas"));
                         return;
                     }
                     Prefs.disarm(this, openClicked
@@ -87,6 +90,8 @@ public class AutoClickService extends AccessibilityService {
             openClicked = false;
             expanded = false;
             warmupAt = 0;
+            gestureTried = false;
+            warmupMethod = "";
             lastClickAt = 0;
             seen.clear();
         }
@@ -124,6 +129,7 @@ public class AutoClickService extends AccessibilityService {
                     return;
                 }
                 expanded = true;
+                expandedAt = now;
                 lastClickAt = now;
                 Prefs.extend(this, 15_000, expandResult + "; прошу доступ к микрофону и камере…");
                 schedule(800);
@@ -141,29 +147,91 @@ public class AutoClickService extends AccessibilityService {
         schedule(400);
     }
 
-    /** После разворачивания: нажать скрытую кнопку переводчика, дождаться окна Gemini и нажать «Разрешить» */
+    /**
+     * После разворачивания: нажать скрытую кнопку переводчика, дождаться окна Gemini и нажать «Разрешить».
+     * Сначала обычное нажатие; если окна нет — касание «пальцем» по прозрачной полоске у левого края
+     */
     private void handlePermissions(long now) {
         List<AccessibilityNodeInfo> roots = roots();
-        if (warmupAt == 0) {
-            AccessibilityNodeInfo warm = null;
-            for (AccessibilityNodeInfo r : roots) if ((warm = findLabel(r, Prefs.WARMUP_LABEL, 0)) != null) break;
-            if (warm != null && click(warm)) {
-                warmupAt = now;
-                lastClickAt = now;
-            }
-            schedule(400);
-            return;
-        }
+
         // Окно «Требуется разрешение»: есть слово «разрешени»/«permission» и кнопка «Разрешить»
         List<String> allow = Prefs.labels(this, Prefs.ALLOW_LABELS, Prefs.DEFAULT_ALLOW);
         Found f = new Found();
         for (AccessibilityNodeInfo r : roots) collectDialog(r, 0, allow, f);
-        if (f.permissionText && f.allow != null && click(f.allow)) {
-            Prefs.disarm(this, expandResult + "; доступ к микрофону и камере разрешён");
-            session = 0;
-            return;
+        if (f.permissionText && f.allow != null) {
+            if (click(f.allow)) {
+                Prefs.disarm(this, expandResult + "; доступ к микрофону и камере разрешён (" + warmupMethod + ")");
+                session = 0;
+                return;
+            }
+        }
+
+        AccessibilityNodeInfo warm = null;
+        for (AccessibilityNodeInfo r : roots) if ((warm = findLabel(r, Prefs.WARMUP_LABEL, 0)) != null) break;
+        long sinceExpand = now - expandedAt;
+
+        if (warmupAt == 0) {
+            if (warm != null && warm.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                warmupAt = now;
+                warmupMethod = "кнопка найдена, нажата";
+            } else if (sinceExpand > 2500) {
+                // Кнопку не видно (или старый переводчик) — касаемся полоски по месту
+                if (tapWarmupStrip(warm, roots)) {
+                    warmupAt = now;
+                    gestureTried = true;
+                    warmupMethod = warm != null ? "кнопка найдена, касание пальцем" : "кнопка не видна, касание у левого края";
+                }
+            }
+        } else if (!gestureTried && now - warmupAt > 2500) {
+            // Нажали, а окна нет: возможно, Gemini не считает такое нажатие настоящим — касаемся «пальцем»
+            if (tapWarmupStrip(warm, roots)) {
+                gestureTried = true;
+                warmupAt = now;
+                warmupMethod += "; повторно касанием пальцем";
+            }
         }
         schedule(400);
+    }
+
+    /** Коснуться прозрачной полоски переводчика: по её месту, а если её не видно — у левого края области Canvas */
+    private boolean tapWarmupStrip(AccessibilityNodeInfo warm, List<AccessibilityNodeInfo> roots) {
+        Rect r = new Rect();
+        if (warm != null) warm.getBoundsInScreen(r);
+        float x, y;
+        if (!r.isEmpty() && r.height() > 10) {
+            x = r.exactCenterX();
+            y = r.exactCenterY();
+        } else {
+            Rect web = null;
+            for (AccessibilityNodeInfo root : roots) {
+                Rect found = largestWebView(root, 0);
+                if (found != null && (web == null || found.height() * found.width() > web.height() * web.width())) web = found;
+            }
+            if (web == null) return false;
+            float density = getResources().getDisplayMetrics().density;
+            x = web.left + density * 1.5f;
+            y = web.exactCenterY();
+        }
+        Path path = new Path();
+        path.moveTo(x, y);
+        return dispatchGesture(new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 60)).build(), null, null);
+    }
+
+    private Rect largestWebView(AccessibilityNodeInfo n, int depth) {
+        if (n == null || depth > MAX_DEPTH) return null;
+        Rect best = null;
+        CharSequence cls = n.getClassName();
+        if (cls != null && cls.toString().contains("WebView")) {
+            best = new Rect();
+            n.getBoundsInScreen(best);
+            return best; // самый внешний WebView — дальше не спускаемся
+        }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            Rect c = largestWebView(n.getChild(i), depth + 1);
+            if (c != null && (best == null || c.width() * c.height() > best.width() * best.height())) best = c;
+        }
+        return best;
     }
 
     /** Найти узел с подписью — даже скрытый (кнопка переводчика размером 1 px) */
