@@ -1508,8 +1508,11 @@
                         continue;
                     }
 
-                    const retryable = !(err instanceof HttpError) || err.status === 429 || err.status >= 500;
-                    if (!retryable || attempt >= retries) {
+                    // 401/403: окно Gemini подставляет доступ к API само, и сразу после перезагрузки Canvas
+                    // (например, после «Разрешить» в окне разрешений) он бывает ещё не готов — пробуем ещё пару раз
+                    const authHiccup = err instanceof HttpError && (err.status === 401 || err.status === 403);
+                    const retryable = !(err instanceof HttpError) || err.status === 429 || err.status >= 500 || authHiccup;
+                    if (!retryable || attempt >= Math.max(retries, authHiccup ? 2 : 0)) {
                         if (err.name === 'AbortError') {
                             const timeoutErr = new Error('timeout');
                             timeoutErr.name = 'TimeoutError';
@@ -1517,7 +1520,7 @@
                         }
                         throw err;
                     }
-                    await sleep(700 * 2 ** attempt + Math.random() * 250);
+                    await sleep((authHiccup ? 1500 : 700) * 2 ** attempt + Math.random() * 250);
                 } finally {
                     clearTimeout(timer);
                     signal?.removeEventListener('abort', onAbort);
