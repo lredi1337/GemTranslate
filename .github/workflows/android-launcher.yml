@@ -1,10 +1,13 @@
-# Сборка APK «Переводчик» (ярлык, открывающий переводчик в Gemini). Готовый файл — в разделе Releases
+# Релиз: APK-ярлык «Переводчик» + файл переводчика для Gemini (translator-canvas.txt).
+# Кнопки «Скачать» в README ведут на releases/latest/download/…, поэтому оба файла есть в каждом релизе
 name: Android launcher APK
 
 on:
   push:
+    branches: [main]
     paths:
       - 'android/**'
+      - 'dist/**'
       - '.github/workflows/android-launcher.yml'
   workflow_dispatch:
 
@@ -48,8 +51,10 @@ jobs:
         working-directory: android
         run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk Translator.apk
+      - name: Rename APK and add the Gemini file
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk Translator.apk
+          cp dist/translator-canvas.html translator-canvas.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -60,10 +65,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: launcher-${{ github.run_number }}
-          name: Переводчик (ярлык) — сборка ${{ github.run_number }}
+          name: GemTranslate — сборка ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          files: Translator.apk
+          make_latest: true
+          files: |
+            Translator.apk
+            translator-canvas.txt
           body: |
-            Установите Translator.apk на телефон. При первом запуске откроются настройки:
-            вставьте ссылку на чат с переводчиком и включите службу «Переводчик: автооткрытие»
-            в «Специальных возможностях».
+            **translator-canvas.txt** — файл для Gemini: прикрепите его в новом чате и напишите
+            «Сделай Canvas приложение из этого файла, ничего не меняя и не сокращая».
+
+            **Translator.apk** — приложение-ярлык для телефона. При первом запуске вставьте ссылку на чат
+            с переводчиком и включите службу «Переводчик: автооткрытие».
+
+            Пошаговая инструкция — в README репозитория.
