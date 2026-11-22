@@ -41,8 +41,9 @@
         #main-sheet.recording:not(.has-text) #source-text { min-height: 40dvh; }
 
         /* Экранная клавиатура: прячем большие кнопки, оставляем языки */
-        body.keyboard-open #action-row,
-        body.typing #action-row { display: none; }
+        /* Большие кнопки (диалог, микрофон, камера) не прячем, пока курсор в поле: клавиатура просто выезжает поверх них,
+           а если её убрать свайпом или «назад», кнопки сразу на месте. Прячем, только если окно реально сжалось под клавиатуру */
+        body.keyboard-open #action-row { display: none; }
         body.keyboard-open #control-panel { padding-top: 0.5rem; }
         body.keyboard-open #main-container { padding-bottom: 0.5rem; }
         body.keyboard-open #lang-header button[id$="lang-btn"] { height: 2.75rem; }
@@ -1864,15 +1865,10 @@
             if (vv && vv.offsetTop > 0) window.scrollTo(0, 0);
 
             const isShrunk = (baseViewportHeight - currentHeight) > 120;
-            // Встроенное окно чата иногда не присылает «эталонную» высоту без клавиатуры.
-            // Тогда смотрим так: курсор в текстовом поле и окно заметно ниже экрана телефона.
-            const active = document.activeElement;
-            const typing = !!active && (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && /^(text|search)$/.test(active.type)));
-            const muchShorterThanScreen = window.screen?.height && currentHeight < window.screen.height * 0.68;
 
-            // Компактный режим — только когда клавиатура реально открыта (экран стал ниже).
-            // Просто фокус в поле не считается: клавиатуру могли закрыть кнопкой «назад», а кнопки нужны.
-            document.body.classList.toggle('keyboard-open', IS_TOUCH && (isShrunk || (typing && muchShorterThanScreen)));
+            // Компактный режим — только когда окно реально сжалось под клавиатуру и разожмётся, когда её уберут.
+            // По одному лишь курсору в поле не гадаем: клавиатуру могли убрать свайпом, а кнопки должны вернуться сами
+            document.body.classList.toggle('keyboard-open', IS_TOUCH && isShrunk);
         }
 
         /** Поле для набора текста (главное, диалог, поиск) — на телефоне при фокусе открыта клавиатура */
