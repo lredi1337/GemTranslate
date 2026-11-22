@@ -23,13 +23,14 @@ import java.util.Set;
 public class AutoClickService extends AccessibilityService {
     private static final long MIN_GAP_AFTER_CLICK_MS = 700;
     /** Если «Открыть» не видно столько времени, Canvas, вероятно, уже открыт — можно сразу «Развернуть» */
-    private static final long EXPAND_WITHOUT_OPEN_AFTER_MS = 3000;
+    private static final long EXPAND_WITHOUT_OPEN_AFTER_MS = 6000;
     private static final int MAX_DEPTH = 60;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean scanPosted;
     private long session;          // момент запуска ярлыка, к которому относится текущее состояние
     private boolean openClicked;
+    private String openedLabel = "";
     private long lastClickAt;
     private final Set<String> seen = new LinkedHashSet<>();
 
@@ -66,8 +67,8 @@ public class AutoClickService extends AccessibilityService {
                 session = 0;
                 if (p.getString(Prefs.LAST_RESULT, "").startsWith("Запущено")) {
                     Prefs.disarm(this, openClicked
-                            ? "Нажато «Открыть», но кнопка «Развернуть» не найдена"
-                            : "Кнопки не найдены за 20 секунд");
+                            ? "Нажато «" + openedLabel + "», но кнопка «Развернуть» не найдена — впишите её подпись из списка ниже"
+                            : "Кнопки не найдены за 20 секунд — сверьте подписи со списком ниже");
                 }
             }
             return;
@@ -92,16 +93,17 @@ public class AutoClickService extends AccessibilityService {
         boolean mayExpand = openClicked || (found.open == null && now - armedAt > EXPAND_WITHOUT_OPEN_AFTER_MS);
         if (found.expand != null && mayExpand) {
             if (click(found.expand)) {
-                Prefs.disarm(this, (openClicked ? "Нажато «Открыть» и «Развернуть»" : "Нажато «Развернуть»")
-                        + " за " + (now - armedAt) / 100 / 10.0 + " с");
+                Prefs.disarm(this, (openClicked ? "Нажато «" + openedLabel + "», затем «" : "Нажато «") + labelOf(found.expand)
+                        + "» за " + (now - armedAt) / 100 / 10.0 + " с");
                 session = 0;
                 return;
             }
         } else if (found.open != null && !openClicked) {
             if (click(found.open)) {
                 openClicked = true;
+                openedLabel = labelOf(found.open);
                 lastClickAt = now;
-                p.edit().putString(Prefs.LAST_RESULT, "Запущено: нажато «Открыть», жду «Развернуть»…").apply();
+                p.edit().putString(Prefs.LAST_RESULT, "Запущено: нажато «" + openedLabel + "», жду «Развернуть»…").apply();
             }
         }
         // События приходят не всегда — проверяем ещё раз, пока не истекло время
@@ -136,7 +138,7 @@ public class AutoClickService extends AccessibilityService {
 
     private void walk(AccessibilityNodeInfo n, int depth, List<String> openLabels, List<String> expandLabels, Found found) {
         if (n == null || depth > MAX_DEPTH) return;
-        if (n.isVisibleToUser()) {
+        if (n.isVisibleToUser() && !inTopBar(n)) {
             String label = labelOf(n);
             if (!label.isEmpty()) {
                 if (label.length() <= 40 && (n.isClickable() || hasClickableParent(n)) && seen.size() < 60) seen.add(label);
@@ -145,6 +147,14 @@ public class AutoClickService extends AccessibilityService {
             }
         }
         for (int i = 0; i < n.getChildCount(); i++) walk(n.getChild(i), depth + 1, openLabels, expandLabels, found);
+    }
+
+    /** Верхняя полоса экрана (меню, заголовок, «новый чат») — там нужных кнопок нет, ничего не нажимаем */
+    private boolean inTopBar(AccessibilityNodeInfo n) {
+        Rect r = new Rect();
+        n.getBoundsInScreen(r);
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        return r.bottom > 0 && r.bottom < screenH * 0.12f;
     }
 
     private static String labelOf(AccessibilityNodeInfo n) {
@@ -159,14 +169,18 @@ public class AutoClickService extends AccessibilityService {
         return false;
     }
 
-    /** Подпись совпадает целиком, либо начинается с неё (например, «развернуть canvas») */
+    /**
+     * Только точное совпадение подписи. Раньше подходило и начало подписи — и служба нажимала кнопку меню
+     * «Открыть панель навигации» вместо «Открыть» у Canvas
+     */
     private static boolean matches(String label, List<String> wanted) {
-        for (String w : wanted) {
-            if (label.equals(w)) return true;
-            if (label.startsWith(w + " ") && label.length() <= w.length() + 20) return true;
-        }
+        if (NAV_WORDS.matcher(label).find()) return false;
+        for (String w : wanted) if (label.equals(w)) return true;
         return false;
     }
+
+    private static final java.util.regex.Pattern NAV_WORDS =
+            java.util.regex.Pattern.compile("навигац|меню|navigation|menu|drawer|боков");
 
     private boolean click(AccessibilityNodeInfo node) {
         for (AccessibilityNodeInfo c = node; c != null; c = c.getParent()) {
