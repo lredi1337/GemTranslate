@@ -164,10 +164,61 @@ android/                    — ярлык: LaunchActivity, AutoClickService (н
 ```
 
 - После правок `index.html`: `cd tools && npm install && npm run css && npm run canvas`.
-- APK собирается автоматически при изменениях в `android/`. Без настроенных секретов каждая сборка подписывается новым
-  ключом (обновление — только через удаление). Чтобы обновления ставились поверх, добавьте в
-  Settings → Secrets and variables → Actions свои `LAUNCHER_KEYSTORE_B64` (ключ .jks в base64) и
-  `LAUNCHER_STORE_PASSWORD` (пароль, алиас ключа — `launcher`). Подробнее — [android/README.md](android/README.md).
+- APK собирается автоматически в GitHub Actions при изменениях в `android/` — Android Studio не нужна.
+
+### Собрать свой APK со своим ключом подписи
+
+Обычному пользователю это не нужно — берите готовый APK из [Releases](../../releases/latest).
+Этот раздел — если вы хотите поменять что-то в ярлыке и собирать его сами.
+
+**Зачем свой ключ.** Android ставит новую версию приложения поверх старой, только если обе подписаны одним и тем же
+ключом. Без своего ключа сборка в GitHub каждый раз создаёт новый — и каждое обновление придётся ставить через удаление
+(а заодно заново вставлять ссылку и повторять шаг 5 с ADB). Ключ создаётся один раз и хранится в зашифрованных
+Secrets вашего репозитория — **в код его класть нельзя**.
+
+**1. Сделайте форк.** Кнопка **Fork** вверху страницы, затем в своём форке откройте вкладку **Actions** и включите
+workflows («I understand my workflows, go ahead and enable them»).
+
+**2. Создайте ключ (один раз, на компьютере).** Нужна Java: например, [Eclipse Temurin](https://adoptium.net/)
+(«Latest LTS», установщик со всеми галочками по умолчанию). Затем в командной строке (Windows — `cmd`, Mac — «Терминал»):
+
+```
+keytool -genkeypair -keystore launcher.jks -alias launcher -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=My Translator"
+```
+
+Keytool дважды спросит пароль — придумайте длинный (например, 30+ случайных символов) и сохраните его в менеджере паролей.
+Появится файл `launcher.jks`. Сохраните его копию в надёжном месте: потеряете ключ — обновления снова пойдут только через удаление.
+
+**3. Превратите ключ в текст (base64), одной строкой.**
+
+- Windows (PowerShell, в папке с ключом):
+  ```
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("launcher.jks")) | Set-Content -NoNewline launcher.b64
+  ```
+- Mac:
+  ```
+  base64 -i launcher.jks | tr -d '\n' > launcher.b64
+  ```
+
+**4. Добавьте два секрета в свой форк.** Settings → Secrets and variables → Actions → **New repository secret**:
+
+| Name | Secret |
+|---|---|
+| `LAUNCHER_STORE_PASSWORD` | пароль из шага 2 |
+| `LAUNCHER_KEYSTORE_B64` | всё содержимое файла `launcher.b64` (одна длинная строка) |
+
+После этого файлы `launcher.b64` можно удалить, а `launcher.jks` оставить только в надёжной копии.
+
+**5. Соберите.** Вкладка **Actions** → «Android launcher APK» → **Run workflow**. Через пару минут APK появится
+в **Releases** вашего форка. В журнале сборки на шаге «Prepare signing key» не должно быть строк от `keytool` —
+значит, использован ваш ключ, а не временный.
+
+**Если хотите, чтобы ваш ярлык стоял рядом с оригинальным,** поменяйте `applicationId` в
+[`android/app/build.gradle`](android/app/build.gradle) (например, на `com.yourname.translator`) и в команде из шага 5
+используйте новое имя пакета вместо `app.aitranslator.launcher`. С одинаковым `applicationId`, но разными ключами
+Android не даст поставить одно приложение поверх другого.
+
+Подробнее про устройство ярлыка — [android/README.md](android/README.md).
 
 ## Лицензия
 

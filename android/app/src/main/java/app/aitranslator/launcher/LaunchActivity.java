@@ -13,6 +13,7 @@ public class LaunchActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Prefs.publishSetupShortcut(this);
         String url = Prefs.url(this);
         if (url.isEmpty()) {
             startActivity(new Intent(this, SetupActivity.class));

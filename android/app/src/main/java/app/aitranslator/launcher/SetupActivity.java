@@ -36,6 +36,7 @@ public class SetupActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         SharedPreferences p = Prefs.get(this);
+        Prefs.publishSetupShortcut(this);
 
         box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -73,11 +74,11 @@ public class SetupActivity extends Activity {
         text("Некоторые приложения (банки, платёжные) не работают, пока включена чужая служба «Специальных возможностей». "
                 + "Если один раз выдать приложению разрешение через ADB с компьютера, оно будет само включать службу при нажатии "
                 + "на иконку и выключать, как только переводчик открылся. Команда для компьютера:");
-        TextView cmd = text(Prefs.ADB_COMMAND);
+        TextView cmd = text(Prefs.adbCommand(this));
         cmd.setTypeface(Typeface.MONOSPACE);
         button("Скопировать команду", v -> {
             ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("adb", Prefs.ADB_COMMAND));
+            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("adb", Prefs.adbCommand(this)));
             toast("Команда скопирована");
         });
         autoToggleStatus = text("");

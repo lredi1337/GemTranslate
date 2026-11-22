@@ -72,7 +72,26 @@ final class Prefs {
     }
 
     static final String AUTO_MANAGED = "auto_managed";
-    static final String ADB_COMMAND = "adb shell pm grant app.aitranslator.launcher android.permission.WRITE_SECURE_SETTINGS";
+    /** Команда для компьютера — с настоящим именем пакета (в форке оно может быть другим) */
+    static String adbCommand(Context c) {
+        return "adb shell pm grant " + c.getPackageName() + " android.permission.WRITE_SECURE_SETTINGS";
+    }
+
+    /** Долгое нажатие на иконку → «Настройки». Создаётся из кода, чтобы работать при любом имени пакета */
+    static void publishSetupShortcut(Context c) {
+        try {
+            android.content.pm.ShortcutManager sm = c.getSystemService(android.content.pm.ShortcutManager.class);
+            if (sm == null) return;
+            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_VIEW)
+                    .setClass(c, SetupActivity.class);
+            android.content.pm.ShortcutInfo info = new android.content.pm.ShortcutInfo.Builder(c, "setup")
+                    .setShortLabel(c.getString(R.string.shortcut_setup))
+                    .setIcon(android.graphics.drawable.Icon.createWithResource(c, R.mipmap.ic_launcher))
+                    .setIntent(intent)
+                    .build();
+            sm.setDynamicShortcuts(java.util.Collections.singletonList(info));
+        } catch (RuntimeException ignored) {}
+    }
 
     /** Выдано ли через ADB разрешение менять системные настройки (включать/выключать свою службу) */
     static boolean canToggleService(Context c) {
