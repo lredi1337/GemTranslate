@@ -1,0 +1,6 @@
+{
+  "name": "translator-tools",
+  "private": true,
+  "scripts": { "css": "node build-css.js" },
+  "devDependencies": { "postcss": "^8.4.49", "tailwindcss": "3.4.17" }
+}
