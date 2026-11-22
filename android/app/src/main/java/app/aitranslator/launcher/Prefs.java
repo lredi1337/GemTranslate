@@ -19,6 +19,11 @@ final class Prefs {
     static final String ARMED_UNTIL = "armed_until";
     static final String LAST_RESULT = "last_result";
     static final String SEEN = "seen";
+    static final String AUTO_PERMS = "auto_perms";
+    static final String ALLOW_LABELS = "allow_labels";
+
+    static final String WARMUP_LABEL = "подготовить микрофон и камеру";
+    static final String DEFAULT_ALLOW = "Разрешить, Allow";
 
     static final String DEFAULT_OPEN = "Открыть, Open";
     static final String DEFAULT_EXPAND = "Развернуть, Во весь экран, Полноэкранный режим, Открыть в полноэкранном режиме, На весь экран, Expand, Full screen, Fullscreen, Enter full screen, Enter fullscreen, Maximize";
@@ -55,6 +60,11 @@ final class Prefs {
         long now = System.currentTimeMillis();
         get(c).edit().putLong(ARMED_AT, now).putLong(ARMED_UNTIL, now + ARM_WINDOW_MS)
                 .putString(LAST_RESULT, "Запущено, жду кнопки…").putString(SEEN, "").apply();
+    }
+
+    /** Продлить ожидание: после «Развернуть» ещё нужно дождаться окна разрешений */
+    static void extend(Context c, long ms, String result) {
+        get(c).edit().putLong(ARMED_UNTIL, System.currentTimeMillis() + ms).putString(LAST_RESULT, result).apply();
     }
 
     static void disarm(Context c, String result) {

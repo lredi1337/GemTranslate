@@ -30,6 +30,9 @@ public class AutoClickService extends AccessibilityService {
     private boolean scanPosted;
     private long session;          // момент запуска ярлыка, к которому относится текущее состояние
     private boolean openClicked;
+    private boolean expanded;
+    private long warmupAt;          // когда нажали скрытую кнопку «Подготовить микрофон и камеру»
+    private String expandResult = "";
     private String openedLabel = "";
     private long lastClickAt;
     private final Set<String> seen = new LinkedHashSet<>();
@@ -66,6 +69,12 @@ public class AutoClickService extends AccessibilityService {
             if (session != 0 && session == armedAt) {
                 session = 0;
                 if (p.getString(Prefs.LAST_RESULT, "").startsWith("Запущено")) {
+                    if (expanded) {
+                        Prefs.disarm(this, expandResult + (warmupAt > 0
+                                ? "; окно разрешений не появилось — похоже, доступ уже есть"
+                                : "; кнопка подготовки микрофона не найдена — обновите код переводчика в Canvas"));
+                        return;
+                    }
                     Prefs.disarm(this, openClicked
                             ? "Нажато «" + openedLabel + "», но кнопка «Развернуть» не найдена — впишите её подпись из списка ниже"
                             : "Кнопки не найдены за 20 секунд — сверьте подписи со списком ниже");
@@ -76,11 +85,19 @@ public class AutoClickService extends AccessibilityService {
         if (session != armedAt) { // новый запуск ярлыка
             session = armedAt;
             openClicked = false;
+            expanded = false;
+            warmupAt = 0;
             lastClickAt = 0;
             seen.clear();
         }
         if (now - lastClickAt < MIN_GAP_AFTER_CLICK_MS) {
             schedule(MIN_GAP_AFTER_CLICK_MS - (now - lastClickAt) + 50);
+            return;
+        }
+
+        // Развернули — дальше доступ к микрофону и камере: скрытая кнопка переводчика, затем «Разрешить» в окне Gemini
+        if (expanded) {
+            handlePermissions(now);
             return;
         }
 
@@ -99,9 +116,17 @@ public class AutoClickService extends AccessibilityService {
             if (click(found.expand)) {
                 String expLabel = labelOf(found.expand);
                 if (expLabel.isEmpty()) expLabel = "значок справа вверху";
-                Prefs.disarm(this, (openClicked ? "Нажато «" + openedLabel + "», затем «" : "Нажато «") + expLabel
-                        + "» за " + (now - armedAt) / 100 / 10.0 + " с");
-                session = 0;
+                expandResult = (openClicked ? "Нажато «" + openedLabel + "», затем «" : "Нажато «") + expLabel
+                        + "» за " + (now - armedAt) / 100 / 10.0 + " с";
+                if (!p.getBoolean(Prefs.AUTO_PERMS, true)) {
+                    Prefs.disarm(this, expandResult);
+                    session = 0;
+                    return;
+                }
+                expanded = true;
+                lastClickAt = now;
+                Prefs.extend(this, 15_000, expandResult + "; прошу доступ к микрофону и камере…");
+                schedule(800);
                 return;
             }
         } else if (found.open != null && !openClicked) {
@@ -116,7 +141,55 @@ public class AutoClickService extends AccessibilityService {
         schedule(400);
     }
 
+    /** После разворачивания: нажать скрытую кнопку переводчика, дождаться окна Gemini и нажать «Разрешить» */
+    private void handlePermissions(long now) {
+        List<AccessibilityNodeInfo> roots = roots();
+        if (warmupAt == 0) {
+            AccessibilityNodeInfo warm = null;
+            for (AccessibilityNodeInfo r : roots) if ((warm = findLabel(r, Prefs.WARMUP_LABEL, 0)) != null) break;
+            if (warm != null && click(warm)) {
+                warmupAt = now;
+                lastClickAt = now;
+            }
+            schedule(400);
+            return;
+        }
+        // Окно «Требуется разрешение»: есть слово «разрешени»/«permission» и кнопка «Разрешить»
+        List<String> allow = Prefs.labels(this, Prefs.ALLOW_LABELS, Prefs.DEFAULT_ALLOW);
+        Found f = new Found();
+        for (AccessibilityNodeInfo r : roots) collectDialog(r, 0, allow, f);
+        if (f.permissionText && f.allow != null && click(f.allow)) {
+            Prefs.disarm(this, expandResult + "; доступ к микрофону и камере разрешён");
+            session = 0;
+            return;
+        }
+        schedule(400);
+    }
+
+    /** Найти узел с подписью — даже скрытый (кнопка переводчика размером 1 px) */
+    private AccessibilityNodeInfo findLabel(AccessibilityNodeInfo n, String label, int depth) {
+        if (n == null || depth > MAX_DEPTH) return null;
+        if (label.equals(labelOf(n))) return n;
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo hit = findLabel(n.getChild(i), label, depth + 1);
+            if (hit != null) return hit;
+        }
+        return null;
+    }
+
+    private void collectDialog(AccessibilityNodeInfo n, int depth, List<String> allow, Found f) {
+        if (n == null || depth > MAX_DEPTH) return;
+        if (n.isVisibleToUser()) {
+            String label = labelOf(n);
+            if (label.contains("разрешени") || label.contains("permission")) f.permissionText = true;
+            if (f.allow == null && allow.contains(label)) f.allow = n;
+        }
+        for (int i = 0; i < n.getChildCount(); i++) collectDialog(n.getChild(i), depth + 1, allow, f);
+    }
+
     private static final class Found {
+        boolean permissionText;
+        AccessibilityNodeInfo allow;
         AccessibilityNodeInfo open;    // последняя подходящая — у самого свежего Canvas в чате
         AccessibilityNodeInfo expand;  // первая подходящая
         boolean canvasScreen;          // вверху вкладки «Код» / «Предварительный просмотр» — открыт экран Canvas

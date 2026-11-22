@@ -13,6 +13,7 @@ import android.text.InputType;
 import android.util.TypedValue;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -24,6 +25,8 @@ public class SetupActivity extends Activity {
     private EditText url;
     private EditText openLabels;
     private EditText expandLabels;
+    private EditText allowLabels;
+    private CheckBox autoPerms;
     private TextView serviceStatus;
     private TextView lastRun;
     private LinearLayout box;
@@ -72,6 +75,14 @@ public class SetupActivity extends Activity {
         text("Кнопка, разворачивающая на весь экран:");
         expandLabels = field(p.getString(Prefs.EXPAND_LABELS, Prefs.DEFAULT_EXPAND), "", InputType.TYPE_CLASS_TEXT);
 
+        autoPerms = new CheckBox(this);
+        autoPerms.setText("После разворачивания сразу давать переводчику доступ к микрофону и камере");
+        autoPerms.setChecked(p.getBoolean(Prefs.AUTO_PERMS, true));
+        box.addView(autoPerms);
+        text("Кнопка в окне «Требуется разрешение»:");
+        allowLabels = field(p.getString(Prefs.ALLOW_LABELS, Prefs.DEFAULT_ALLOW), "", InputType.TYPE_CLASS_TEXT);
+        text("Для этого в Canvas должна быть свежая версия переводчика (со скрытой кнопкой «Подготовить микрофон и камеру»).");
+
         header("4. Последний запуск");
         lastRun = text("");
 
@@ -106,6 +117,8 @@ public class SetupActivity extends Activity {
                 .putString(Prefs.URL, u)
                 .putString(Prefs.OPEN_LABELS, openLabels.getText().toString())
                 .putString(Prefs.EXPAND_LABELS, expandLabels.getText().toString())
+                .putString(Prefs.ALLOW_LABELS, allowLabels.getText().toString())
+                .putBoolean(Prefs.AUTO_PERMS, autoPerms.isChecked())
                 .apply();
         return true;
     }
