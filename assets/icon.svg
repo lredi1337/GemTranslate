@@ -25,19 +25,17 @@
       <path d="M212 0 L512 296 L512 512 L375 512 Z" fill="#C9CED4" opacity="0.45"/>
       <rect width="512" height="512" fill="url(#fold)"/>
       <!-- 文 -->
-      <g fill="none" stroke="#4E6175" stroke-width="21" stroke-linecap="butt">
-        <path d="M373 152 V182"/>
-        <path d="M268 192 H472"/>
-        <path d="M425 206 Q402 292 292 346"/>
-        <path d="M318 206 Q352 292 468 334"/>
-      </g>
+      <path fill="none" stroke="#4E6175" stroke-width="21" stroke-linecap="butt" stroke-linejoin="round"
+        d="M373 150 V192 M266 192 H474 M426 190 Q404 290 290 348 M316 190 Q352 292 470 336"/>
     </g>
     <!-- Ai -->
     <g fill="#FFFFFF">
-      <path fill-rule="evenodd" d="M40 334 L86 188 L121 188 L167 334 L131 334 L122 305 L85 305 L76 334 Z M93 280 L114 280 L103.5 247 Z"/>
-      <rect x="207" y="236" width="34" height="98"/>
+      <!-- «A»: ножки 27 px, узкая верхушка, перекладина 20 px -->
+      <path fill-rule="evenodd" d="M48 334 L94 190 L120 190 L166 334 L138 334 L127 300 L87 300 L76 334 Z M93.5 279 L120.5 279 L107 236.8 Z"/>
+      <!-- «i» вплотную к «A» -->
+      <rect x="178" y="238" width="27" height="96"/>
       <!-- Искра вместо точки над i -->
-      <path d="M224 158 Q228 188 258 192 Q228 196 224 226 Q220 196 190 192 Q220 188 224 158 Z"/>
+      <path d="M191.5 160 Q195 189 222 193 Q195 197 191.5 226 Q188 197 161 193 Q188 189 191.5 160 Z"/>
     </g>
   </g>
 </svg>
