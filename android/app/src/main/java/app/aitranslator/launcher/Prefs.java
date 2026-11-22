@@ -21,7 +21,7 @@ final class Prefs {
     static final String SEEN = "seen";
 
     static final String DEFAULT_OPEN = "Открыть, Open";
-    static final String DEFAULT_EXPAND = "Развернуть, Во весь экран, Полноэкранный режим, Expand, Full screen, Fullscreen, Maximize";
+    static final String DEFAULT_EXPAND = "Развернуть, Во весь экран, Полноэкранный режим, Открыть в полноэкранном режиме, На весь экран, Expand, Full screen, Fullscreen, Enter full screen, Enter fullscreen, Maximize";
 
     /** Сколько служба ждёт кнопки после нажатия на ярлык */
     static final long ARM_WINDOW_MS = 20_000;

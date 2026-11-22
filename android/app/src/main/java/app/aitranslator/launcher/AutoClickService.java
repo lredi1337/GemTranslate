@@ -91,9 +91,15 @@ public class AutoClickService extends AccessibilityService {
         p.edit().putString(Prefs.SEEN, String.join(" · ", seen)).apply();
 
         boolean mayExpand = openClicked || (found.open == null && now - armedAt > EXPAND_WITHOUT_OPEN_AFTER_MS);
+        // Подписи у значка нет — на экране Canvas ищем кнопку по месту (через секунду после «Открыть», когда экран встал)
+        if (found.expand == null && mayExpand && found.canvasScreen && now - lastClickAt > 1000) {
+            found.expand = expandByPosition(found.topButtons);
+        }
         if (found.expand != null && mayExpand) {
             if (click(found.expand)) {
-                Prefs.disarm(this, (openClicked ? "Нажато «" + openedLabel + "», затем «" : "Нажато «") + labelOf(found.expand)
+                String expLabel = labelOf(found.expand);
+                if (expLabel.isEmpty()) expLabel = "значок справа вверху";
+                Prefs.disarm(this, (openClicked ? "Нажато «" + openedLabel + "», затем «" : "Нажато «") + expLabel
                         + "» за " + (now - armedAt) / 100 / 10.0 + " с");
                 session = 0;
                 return;
@@ -113,6 +119,34 @@ public class AutoClickService extends AccessibilityService {
     private static final class Found {
         AccessibilityNodeInfo open;    // последняя подходящая — у самого свежего Canvas в чате
         AccessibilityNodeInfo expand;  // первая подходящая
+        boolean canvasScreen;          // вверху вкладки «Код» / «Предварительный просмотр» — открыт экран Canvas
+        final List<AccessibilityNodeInfo> topButtons = new ArrayList<>();
+    }
+
+    /** Вкладки вверху экрана Canvas — по ним понятно, что это Canvas, а не обычный чат */
+    private static final java.util.Set<String> CANVAS_TABS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "код", "code", "предварительный просмотр", "предпросмотр", "preview"));
+
+    /**
+     * Кнопка «во весь экран» на экране Canvas — значок без подписи. Справа вверху: […][⤢][⋮].
+     * Берём кнопку, стоящую сразу слева от самой правой («⋮»)
+     */
+    private AccessibilityNodeInfo expandByPosition(List<AccessibilityNodeInfo> top) {
+        int w = getResources().getDisplayMetrics().widthPixels;
+        List<AccessibilityNodeInfo> right = new ArrayList<>();
+        Rect r = new Rect();
+        for (AccessibilityNodeInfo n : top) {
+            n.getBoundsInScreen(r);
+            if (r.width() > 0 && r.width() < w * 0.3f && r.centerX() > w * 0.6f) right.add(n);
+        }
+        if (right.size() < 2) return null;
+        right.sort((a, b) -> {
+            Rect ra = new Rect(), rb = new Rect();
+            a.getBoundsInScreen(ra);
+            b.getBoundsInScreen(rb);
+            return Integer.compare(rb.centerX(), ra.centerX()); // справа налево
+        });
+        return right.get(1);
     }
 
     private List<AccessibilityNodeInfo> roots() {
@@ -138,13 +172,18 @@ public class AutoClickService extends AccessibilityService {
 
     private void walk(AccessibilityNodeInfo n, int depth, List<String> openLabels, List<String> expandLabels, Found found) {
         if (n == null || depth > MAX_DEPTH) return;
-        if (n.isVisibleToUser() && !inTopBar(n)) {
+        if (n.isVisibleToUser()) {
+            boolean top = inTopBar(n);
             String label = labelOf(n);
             if (!label.isEmpty()) {
                 if (label.length() <= 40 && (n.isClickable() || hasClickableParent(n)) && seen.size() < 60) seen.add(label);
-                if (matches(label, openLabels)) found.open = n;
+                // «Открыть» Canvas — только в ленте чата: вверху кнопка меню «Открыть панель навигации»
+                if (!top && matches(label, openLabels)) found.open = n;
+                // «Развернуть» — в верхней полосе экрана Canvas
                 if (found.expand == null && matches(label, expandLabels)) found.expand = n;
+                if (top && CANVAS_TABS.contains(label)) found.canvasScreen = true;
             }
+            if (top && n.isClickable()) found.topButtons.add(n);
         }
         for (int i = 0; i < n.getChildCount(); i++) walk(n.getChild(i), depth + 1, openLabels, expandLabels, found);
     }
