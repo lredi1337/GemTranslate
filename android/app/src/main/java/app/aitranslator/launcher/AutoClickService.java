@@ -8,20 +8,15 @@ import android.graphics.Rect;
 import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.PixelFormat;
-import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewOutlineProvider;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -105,44 +100,43 @@ public class AutoClickService extends AccessibilityService {
 
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#1B1C20"));
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setGravity(Gravity.CENTER_HORIZONTAL);
+        int iconSize = Math.round(112 * d);
+
+        // Мягкое синее свечение за логотипом — «дышит» вместе с ним
+        View glow = new View(this);
+        android.graphics.drawable.GradientDrawable glowShape = new android.graphics.drawable.GradientDrawable();
+        glowShape.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        glowShape.setGradientType(android.graphics.drawable.GradientDrawable.RADIAL_GRADIENT);
+        glowShape.setGradientRadius(iconSize * 1.1f);
+        glowShape.setColors(new int[] { Color.parseColor("#594C8BF5"), Color.parseColor("#004C8BF5") });
+        glow.setBackground(glowShape);
+        int glowSize = Math.round(iconSize * 2.4f);
+        root.addView(glow, new FrameLayout.LayoutParams(glowSize, glowSize, Gravity.CENTER));
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(R.drawable.ic_launcher_art);
         icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        final float radius = 30 * d;
+        final float radius = 32 * d;
         icon.setOutlineProvider(new ViewOutlineProvider() {
             @Override
             public void getOutline(View view, Outline outline) {
-                // Как на рабочем столе: видна середина слоя иконки, скруглённая
-                int w = view.getWidth(), h = view.getHeight();
-                outline.setRoundRect(0, 0, w, h, radius);
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
             }
         });
         icon.setClipToOutline(true);
-        int iconSize = Math.round(104 * d);
-        col.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
+        icon.setElevation(10 * d);
+        root.addView(icon, new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER));
 
-        TextView title = new TextView(this);
-        title.setText(R.string.app_name);
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -2);
-        tp.topMargin = Math.round(20 * d);
-        col.addView(title, tp);
-
-        ProgressBar spinner = new ProgressBar(this);
-        spinner.setIndeterminate(true);
-        spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#4C8BF5")));
-        int sp = Math.round(28 * d);
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(sp, sp);
-        pp.topMargin = Math.round(28 * d);
-        col.addView(spinner, pp);
-
-        root.addView(col, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        // Появление: проявляется с лёгкой «пружинкой»
+        icon.setAlpha(0f);
+        icon.setScaleX(0.82f);
+        icon.setScaleY(0.82f);
+        glow.setAlpha(0f);
+        icon.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(420)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(1.6f))
+                .withEndAction(() -> startBreathing(icon, glow)).start();
+        glow.animate().alpha(0.7f).setDuration(600).start();
+        splashIcon = icon;
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
@@ -169,11 +163,44 @@ public class AutoClickService extends AccessibilityService {
         handler.postDelayed(() -> {
             View v = splash;
             if (v == null) return;
-            v.animate().alpha(0f).setDuration(220).withEndAction(this::removeSplashNow).start();
+            stopBreathing();
+            // Уход: логотип чуть приближается и растворяется вместе с фоном — как открытие приложения
+            if (splashIcon != null) splashIcon.animate().scaleX(1.12f).scaleY(1.12f).setDuration(260)
+                    .setInterpolator(new android.view.animation.AccelerateInterpolator()).start();
+            v.animate().alpha(0f).setDuration(260).withEndAction(this::removeSplashNow).start();
         }, delayMs);
     }
 
+    private View splashIcon;
+    private android.animation.AnimatorSet breathing;
+
+    /** Пока идёт загрузка, логотип медленно «дышит», а свечение за ним мягко пульсирует */
+    private void startBreathing(View icon, View glow) {
+        if (splash == null) return;
+        android.animation.ObjectAnimator sx = android.animation.ObjectAnimator.ofFloat(icon, View.SCALE_X, 1f, 1.06f);
+        android.animation.ObjectAnimator sy = android.animation.ObjectAnimator.ofFloat(icon, View.SCALE_Y, 1f, 1.06f);
+        android.animation.ObjectAnimator ga = android.animation.ObjectAnimator.ofFloat(glow, View.ALPHA, 0.7f, 1f);
+        android.animation.ObjectAnimator gs = android.animation.ObjectAnimator.ofFloat(glow, View.SCALE_X, 1f, 1.12f);
+        android.animation.ObjectAnimator gsy = android.animation.ObjectAnimator.ofFloat(glow, View.SCALE_Y, 1f, 1.12f);
+        for (android.animation.ObjectAnimator a : new android.animation.ObjectAnimator[] { sx, sy, ga, gs, gsy }) {
+            a.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            a.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+        }
+        breathing = new android.animation.AnimatorSet();
+        breathing.playTogether(sx, sy, ga, gs, gsy);
+        breathing.setDuration(1100);
+        breathing.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        breathing.start();
+    }
+
+    private void stopBreathing() {
+        if (breathing != null) breathing.cancel();
+        breathing = null;
+    }
+
     private void removeSplashNow() {
+        stopBreathing();
+        splashIcon = null;
         View v = splash;
         splash = null;
         if (v == null) return;
