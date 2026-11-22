@@ -1700,7 +1700,11 @@
                 if (err.status === 429) return t('err.rateLimit');
                 if (err.status >= 500) return t('err.unavailable');
                 // Код в скобках — чтобы по скриншоту было видно, что именно ответил сервер
-                if (err.status === 401 || err.status === 403) return `${t('err.noAccess')} (${err.status})`;
+                // Код и ответ сервера — по ним видно, чего не хватило запросу (нет ключа, неверный ключ и т. п.)
+                if (err.status === 401 || err.status === 403) {
+                    const detail = String(err.message || '').replace(/^HTTP \d+:?\s*/, '').replace(/\s+/g, ' ').trim().slice(0, 90);
+                    return `${t('err.noAccess')} (${err.status}${detail ? ': ' + detail : ''})`;
+                }
             }
             if (typeof err?.message === 'string' && err.message.startsWith('empty:SAFETY')) {
                 return t('err.safety');
