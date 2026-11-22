@@ -71,7 +71,10 @@ public class AutoClickService extends AccessibilityService {
     /** Запущенная служба (в том же процессе) — через неё ярлык показывает заставку */
     static AutoClickService instance;
     private View splash;
-    private final Runnable splashFailsafe = () -> hideSplash(0);
+    private final Runnable splashFailsafe = () -> {
+        hideSplash(0);
+        turnOffIfAutoManaged(600);
+    };
 
     @Override
     protected void onServiceConnected() {
@@ -212,6 +215,20 @@ public class AutoClickService extends AccessibilityService {
         Prefs.disarm(this, result);
         session = 0;
         hideSplash(hideDelayMs);
+        turnOffIfAutoManaged(hideDelayMs + 600);
+    }
+
+    /**
+     * Службу включало само приложение (разрешение из ADB) — выключаем её, когда всё сделано:
+     * так она не мешает банкам и другим приложениям, которые не любят включённые «Специальные возможности»
+     */
+    private void turnOffIfAutoManaged(long delayMs) {
+        if (!Prefs.get(this).getBoolean(Prefs.AUTO_MANAGED, false) || !Prefs.canToggleService(this)) return;
+        handler.postDelayed(() -> {
+            if (isArmed()) return; // за это время снова нажали на иконку — пусть работает
+            removeSplashNow();
+            try { disableSelf(); } catch (RuntimeException ignored) {}
+        }, delayMs);
     }
 
     private boolean isArmed() {

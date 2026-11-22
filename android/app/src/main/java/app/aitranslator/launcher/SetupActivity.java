@@ -28,6 +28,7 @@ public class SetupActivity extends Activity {
     private EditText allowLabels;
     private CheckBox autoPerms;
     private TextView serviceStatus;
+    private TextView autoToggleStatus;
     private TextView lastRun;
     private LinearLayout box;
 
@@ -68,6 +69,19 @@ public class SetupActivity extends Activity {
         button("Открыть сведения о приложении", v -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName()))));
 
+        header("Служба только на время запуска");
+        text("Некоторые приложения (банки, платёжные) не работают, пока включена чужая служба «Специальных возможностей». "
+                + "Если один раз выдать приложению разрешение через ADB с компьютера, оно будет само включать службу при нажатии "
+                + "на иконку и выключать, как только переводчик открылся. Команда для компьютера:");
+        TextView cmd = text(Prefs.ADB_COMMAND);
+        cmd.setTypeface(Typeface.MONOSPACE);
+        button("Скопировать команду", v -> {
+            ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("adb", Prefs.ADB_COMMAND));
+            toast("Команда скопирована");
+        });
+        autoToggleStatus = text("");
+
         header("3. Подписи кнопок в Gemini");
         text("Через запятую. Если Gemini переименует кнопку, впишите новую подпись — её можно взять из списка «Что служба видела» ниже.");
         text("Кнопка, открывающая Canvas:");
@@ -99,7 +113,15 @@ public class SetupActivity extends Activity {
     protected void onResume() {
         super.onResume();
         boolean on = Prefs.serviceEnabled(this);
-        serviceStatus.setText(on ? "✓ Служба включена" : "✗ Служба выключена — кнопки нажимать будет некому");
+        boolean auto = Prefs.canToggleService(this);
+        serviceStatus.setText(auto
+                ? "✓ Служба включается сама на время запуска (разрешение из ADB выдано)"
+                : on ? "✓ Служба включена" : "✗ Служба выключена — кнопки нажимать будет некому");
+        autoToggleStatus.setText(auto
+                ? "✓ Разрешение выдано: служба работает только несколько секунд при запуске. Включать её вручную не нужно — "
+                        + "если она сейчас включена, можно выключить."
+                : "Разрешение не выдано — служба работает постоянно, как сейчас.");
+        autoToggleStatus.setTypeface(Typeface.DEFAULT_BOLD);
         serviceStatus.setTypeface(Typeface.DEFAULT_BOLD);
         SharedPreferences p = Prefs.get(this);
         String seen = p.getString(Prefs.SEEN, "");

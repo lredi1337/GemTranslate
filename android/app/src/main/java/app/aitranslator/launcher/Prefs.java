@@ -71,6 +71,32 @@ final class Prefs {
         get(c).edit().putLong(ARMED_UNTIL, 0).putString(LAST_RESULT, result).apply();
     }
 
+    static final String AUTO_MANAGED = "auto_managed";
+    static final String ADB_COMMAND = "adb shell pm grant app.aitranslator.launcher android.permission.WRITE_SECURE_SETTINGS";
+
+    /** Выдано ли через ADB разрешение менять системные настройки (включать/выключать свою службу) */
+    static boolean canToggleService(Context c) {
+        return c.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Включить свою службу «Специальных возможностей» (только с разрешением из ADB) */
+    static boolean enableService(Context c) {
+        if (!canToggleService(c)) return false;
+        try {
+            android.content.ContentResolver cr = c.getContentResolver();
+            String me = new ComponentName(c, AutoClickService.class).flattenToString();
+            String list = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (list == null || list.isEmpty()) list = me;
+            else if (!serviceEnabled(c)) list = list + ":" + me;
+            Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, list);
+            Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     static boolean serviceEnabled(Context c) {
         String enabled = Settings.Secure.getString(c.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
         if (TextUtils.isEmpty(enabled)) return false;

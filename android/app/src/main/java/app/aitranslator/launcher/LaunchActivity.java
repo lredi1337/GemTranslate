@@ -19,6 +19,27 @@ public class LaunchActivity extends Activity {
             finish();
             return;
         }
+        // Разрешение из ADB есть: служба включается только на время запуска и потом выключается сама
+        if (Prefs.canToggleService(this)) {
+            boolean wasOn = Prefs.serviceEnabled(this);
+            Prefs.get(this).edit().putBoolean(Prefs.AUTO_MANAGED, !wasOn || Prefs.get(this).getBoolean(Prefs.AUTO_MANAGED, false)).apply();
+            if (!wasOn) Prefs.enableService(this);
+            waitForServiceThenOpen(url, System.currentTimeMillis());
+            return;
+        }
+        launchNow(url);
+    }
+
+    /** Служба подключается не мгновенно — ждём её (до 2 с), чтобы заставка закрыла чат с первого кадра */
+    private void waitForServiceThenOpen(String url, long startedAt) {
+        if (AutoClickService.instance != null || System.currentTimeMillis() - startedAt > 2000) {
+            launchNow(url);
+            return;
+        }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> waitForServiceThenOpen(url, startedAt), 50);
+    }
+
+    private void launchNow(String url) {
         if (Prefs.serviceEnabled(this)) {
             Prefs.arm(this);
             // Заставка закрывает чат Gemini, пока служба нажимает кнопки, — видна только «загрузка»
