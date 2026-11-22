@@ -33,7 +33,9 @@ public class AutoClickService extends AccessibilityService {
     private boolean expanded;
     private long warmupAt;          // когда нажали скрытую кнопку «Подготовить микрофон и камеру»
     private long expandedAt;
-    private boolean gestureTried;
+    private int warmTaps;
+    private int allowTaps;
+    private long lastAllowTapAt;
     private String warmupMethod = "";
     private String expandResult = "";
     private String openedLabel = "";
@@ -74,7 +76,7 @@ public class AutoClickService extends AccessibilityService {
                 if (p.getString(Prefs.LAST_RESULT, "").startsWith("Запущено")) {
                     if (expanded) {
                         Prefs.disarm(this, expandResult + (warmupAt > 0
-                                ? "; окно разрешений не появилось (" + warmupMethod + ")"
+                                ? (allowTaps > 0 ? "; «Разрешить» нажато " + allowTaps + " раз(а), но окно не закрылось" : "; окно разрешений не появилось (" + warmupMethod + ")")
                                 : "; кнопка подготовки микрофона не найдена и касание не удалось — обновите код переводчика в Canvas"));
                         return;
                     }
@@ -90,7 +92,9 @@ public class AutoClickService extends AccessibilityService {
             openClicked = false;
             expanded = false;
             warmupAt = 0;
-            gestureTried = false;
+            warmTaps = 0;
+            allowTaps = 0;
+            lastAllowTapAt = 0;
             warmupMethod = "";
             lastClickAt = 0;
             seen.clear();
@@ -148,49 +152,54 @@ public class AutoClickService extends AccessibilityService {
     }
 
     /**
-     * После разворачивания: нажать скрытую кнопку переводчика, дождаться окна Gemini и нажать «Разрешить».
-     * Сначала обычное нажатие; если окна нет — касание «пальцем» по прозрачной полоске у левого края
+     * После разворачивания: коснуться «пальцем» скрытой полоски переводчика (служебное нажатие Gemini не принимает),
+     * дождаться окна «Требуется разрешение» и коснуться «Разрешить». Успех — только когда окно закрылось
      */
     private void handlePermissions(long now) {
         List<AccessibilityNodeInfo> roots = roots();
 
-        // Окно «Требуется разрешение»: есть слово «разрешени»/«permission» и кнопка «Разрешить»
         List<String> allow = Prefs.labels(this, Prefs.ALLOW_LABELS, Prefs.DEFAULT_ALLOW);
         Found f = new Found();
         for (AccessibilityNodeInfo r : roots) collectDialog(r, 0, allow, f);
-        if (f.permissionText && f.allow != null) {
-            if (click(f.allow)) {
-                Prefs.disarm(this, expandResult + "; доступ к микрофону и камере разрешён (" + warmupMethod + ")");
-                session = 0;
-                return;
+        boolean dialog = f.permissionText && f.allow != null;
+
+        if (allowTaps > 0 && !dialog) {
+            Prefs.disarm(this, expandResult + "; доступ к микрофону и камере разрешён");
+            session = 0;
+            return;
+        }
+        if (dialog) {
+            // Ещё одно касание — если окно не закрылось за секунду после прошлого
+            if (allowTaps < 3 && now - lastAllowTapAt > 1200 && tapCenter(f.allow)) {
+                allowTaps++;
+                lastAllowTapAt = now;
             }
+            schedule(400);
+            return;
         }
 
-        AccessibilityNodeInfo warm = null;
-        for (AccessibilityNodeInfo r : roots) if ((warm = findLabel(r, Prefs.WARMUP_LABEL, 0)) != null) break;
-        long sinceExpand = now - expandedAt;
-
-        if (warmupAt == 0) {
-            if (warm != null && warm.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                warmupAt = now;
-                warmupMethod = "кнопка найдена, нажата";
-            } else if (sinceExpand > 2500) {
-                // Кнопку не видно (или старый переводчик) — касаемся полоски по месту
-                if (tapWarmupStrip(warm, roots)) {
-                    warmupAt = now;
-                    gestureTried = true;
-                    warmupMethod = warm != null ? "кнопка найдена, касание пальцем" : "кнопка не видна, касание у левого края";
-                }
-            }
-        } else if (!gestureTried && now - warmupAt > 2500) {
-            // Нажали, а окна нет: возможно, Gemini не считает такое нажатие настоящим — касаемся «пальцем»
+        // Окна пока нет: касаемся полоски; если окно так и не появилось — повторяем раз в 3 секунды (до 3 раз)
+        if (warmTaps < 3 && (warmupAt == 0 || now - warmupAt > 3000)) {
+            AccessibilityNodeInfo warm = null;
+            for (AccessibilityNodeInfo r : roots) if ((warm = findLabel(r, Prefs.WARMUP_LABEL, 0)) != null) break;
             if (tapWarmupStrip(warm, roots)) {
-                gestureTried = true;
                 warmupAt = now;
-                warmupMethod += "; повторно касанием пальцем";
+                warmTaps++;
+                warmupMethod = warm != null ? "касание по кнопке" : "касание у левого края";
             }
         }
         schedule(400);
+    }
+
+    /** Касание «пальцем» по центру узла */
+    private boolean tapCenter(AccessibilityNodeInfo node) {
+        Rect r = new Rect();
+        node.getBoundsInScreen(r);
+        if (r.isEmpty()) return false;
+        Path path = new Path();
+        path.moveTo(r.exactCenterX(), r.exactCenterY());
+        return dispatchGesture(new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 60)).build(), null, null);
     }
 
     /** Коснуться прозрачной полоски переводчика: по её месту, а если её не видно — у левого края области Canvas */
