@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Чтобы видеть, установлено ли приложение Gemini (Android 11+) -->
+    <queries>
+        <package android:name="com.google.android.apps.bard" />
+        <package android:name="com.google.android.googlequicksearchbox" />
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:allowBackup="true">
+
+        <!-- Нажатие на иконку: открыть чат и попросить службу нажать кнопки. Своего экрана нет -->
+        <activity
+            android:name=".LaunchActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Настройки: ссылка на чат, подписи кнопок, включение службы -->
+        <activity
+            android:name=".SetupActivity"
+            android:exported="false"
+            android:label="@string/setup_title"
+            android:theme="@android:style/Theme.DeviceDefault"
+            android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".AutoClickService"
+            android:exported="true"
+            android:label="@string/service_name"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/auto_click" />
+        </service>
+    </application>
+</manifest>

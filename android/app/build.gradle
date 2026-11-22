@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'app.aitranslator.launcher'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.aitranslator.launcher'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // Ключ подписи в репозитории не хранится. Сборка в GitHub берёт его из зашифрованных Secrets
+    // (тогда новые версии ставятся поверх старых), а если их нет — создаёт новый ключ на каждую сборку
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('LAUNCHER_KEYSTORE') ?: 'launcher.jks')
+            storePassword System.getenv('LAUNCHER_STORE_PASSWORD')
+            keyAlias System.getenv('LAUNCHER_KEY_ALIAS') ?: 'launcher'
+            keyPassword System.getenv('LAUNCHER_KEY_PASSWORD') ?: System.getenv('LAUNCHER_STORE_PASSWORD')
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
