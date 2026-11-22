@@ -10,8 +10,8 @@ android {
         applicationId 'app.aitranslator.launcher'
         minSdk 26
         targetSdk 34
-        versionCode 6
-        versionName '1.5'
+        versionCode 7
+        versionName '1.6'
     }
 
     // Ключ подписи в репозитории не хранится. Сборка в GitHub берёт его из зашифрованных Secrets

@@ -21,6 +21,9 @@ public class LaunchActivity extends Activity {
         }
         if (Prefs.serviceEnabled(this)) {
             Prefs.arm(this);
+            // Заставка закрывает чат Gemini, пока служба нажимает кнопки, — видна только «загрузка»
+            AutoClickService svc = AutoClickService.instance;
+            if (svc != null) svc.showSplash();
         } else {
             Toast.makeText(this, "Автонажатие выключено — включите в настройках (долгое нажатие на иконку)", Toast.LENGTH_LONG).show();
         }

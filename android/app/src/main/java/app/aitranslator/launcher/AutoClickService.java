@@ -5,8 +5,23 @@ import android.accessibilityservice.GestureDescription;
 import android.content.SharedPreferences;
 import android.graphics.Path;
 import android.graphics.Rect;
+import android.graphics.Color;
+import android.graphics.Outline;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewOutlineProvider;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -34,6 +49,7 @@ public class AutoClickService extends AccessibilityService {
     private long warmupAt;          // когда нажали скрытую кнопку «Подготовить микрофон и камеру»
     private long expandedAt;
     private int warmTaps;
+    private boolean splashLiftedForAllow;
     private int allowTaps;
     private long lastAllowTapAt;
     private String warmupMethod = "";
@@ -55,6 +71,122 @@ public class AutoClickService extends AccessibilityService {
     @Override
     public void onInterrupt() {}
 
+    /* ---------- Заставка поверх Gemini, пока идут нажатия ---------- */
+
+    /** Запущенная служба (в том же процессе) — через неё ярлык показывает заставку */
+    static AutoClickService instance;
+    private View splash;
+    private final Runnable splashFailsafe = () -> hideSplash(0);
+
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        instance = this;
+    }
+
+    @Override
+    public boolean onUnbind(android.content.Intent intent) {
+        if (instance == this) instance = null;
+        removeSplashNow();
+        return super.onUnbind(intent);
+    }
+
+    /**
+     * Заставка во весь экран: иконка, название, индикатор загрузки. Касания проходят сквозь неё,
+     * поэтому нажатия службы попадают в Gemini. Слой «Специальных возможностей» — отдельного разрешения не нужно
+     */
+    void showSplash() {
+        handler.removeCallbacks(splashFailsafe);
+        handler.postDelayed(splashFailsafe, Prefs.ARM_WINDOW_MS + 16_000); // страховка: не висеть вечно
+        if (splash != null) return;
+        WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        if (wm == null) return;
+        float d = getResources().getDisplayMetrics().density;
+
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.parseColor("#1B1C20"));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_launcher_art);
+        icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        final float radius = 30 * d;
+        icon.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                // Как на рабочем столе: видна середина слоя иконки, скруглённая
+                int w = view.getWidth(), h = view.getHeight();
+                outline.setRoundRect(0, 0, w, h, radius);
+            }
+        });
+        icon.setClipToOutline(true);
+        int iconSize = Math.round(104 * d);
+        col.addView(icon, new LinearLayout.LayoutParams(iconSize, iconSize));
+
+        TextView title = new TextView(this);
+        title.setText(R.string.app_name);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -2);
+        tp.topMargin = Math.round(20 * d);
+        col.addView(title, tp);
+
+        ProgressBar spinner = new ProgressBar(this);
+        spinner.setIndeterminate(true);
+        spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(Color.parseColor("#4C8BF5")));
+        int sp = Math.round(28 * d);
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(sp, sp);
+        pp.topMargin = Math.round(28 * d);
+        col.addView(spinner, pp);
+
+        root.addView(col, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        if (Build.VERSION.SDK_INT >= 28) {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
+        try {
+            wm.addView(root, lp);
+            splash = root;
+        } catch (RuntimeException ignored) {
+            // Не получилось показать — работаем без заставки
+        }
+    }
+
+    /** Плавно убрать заставку через delayMs (дать переводчику дорисоваться под ней) */
+    void hideSplash(long delayMs) {
+        handler.removeCallbacks(splashFailsafe);
+        handler.postDelayed(() -> {
+            View v = splash;
+            if (v == null) return;
+            v.animate().alpha(0f).setDuration(220).withEndAction(this::removeSplashNow).start();
+        }, delayMs);
+    }
+
+    private void removeSplashNow() {
+        View v = splash;
+        splash = null;
+        if (v == null) return;
+        try { ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(v); } catch (RuntimeException ignored) {}
+    }
+
+    /** Закончить запуск: записать итог и убрать заставку */
+    private void finish(String result, long hideDelayMs) {
+        Prefs.disarm(this, result);
+        session = 0;
+        hideSplash(hideDelayMs);
+    }
+
     private boolean isArmed() {
         return System.currentTimeMillis() < Prefs.get(this).getLong(Prefs.ARMED_UNTIL, 0);
     }
@@ -75,16 +207,17 @@ public class AutoClickService extends AccessibilityService {
                 session = 0;
                 if (p.getString(Prefs.LAST_RESULT, "").startsWith("Запущено")) {
                     if (expanded) {
-                        Prefs.disarm(this, expandResult + (warmupAt > 0
+                        finish(expandResult + (warmupAt > 0
                                 ? (allowTaps > 0 ? "; «Разрешить» нажато " + allowTaps + " раз(а), но окно не закрылось" : "; окно разрешений не появилось (" + warmupMethod + ")")
-                                : "; кнопка подготовки микрофона не найдена и касание не удалось — обновите код переводчика в Canvas"));
+                                : "; кнопка подготовки микрофона не найдена и касание не удалось — обновите код переводчика в Canvas"), 0);
                         return;
                     }
-                    Prefs.disarm(this, openClicked
+                    finish(openClicked
                             ? "Нажато «" + openedLabel + "», но кнопка «Развернуть» не найдена — впишите её подпись из списка ниже"
-                            : "Кнопки не найдены за 20 секунд — сверьте подписи со списком ниже");
+                            : "Кнопки не найдены за 20 секунд — сверьте подписи со списком ниже", 0);
                 }
             }
+            hideSplash(0);
             return;
         }
         if (session != armedAt) { // новый запуск ярлыка
@@ -93,6 +226,7 @@ public class AutoClickService extends AccessibilityService {
             expanded = false;
             warmupAt = 0;
             warmTaps = 0;
+            splashLiftedForAllow = false;
             allowTaps = 0;
             lastAllowTapAt = 0;
             warmupMethod = "";
@@ -116,7 +250,23 @@ public class AutoClickService extends AccessibilityService {
         for (AccessibilityNodeInfo root : roots()) walk(root, 0, openLabels, expandLabels, found);
         p.edit().putString(Prefs.SEEN, String.join(" · ", seen)).apply();
 
-        boolean mayExpand = openClicked || (found.open == null && now - armedAt > EXPAND_WITHOUT_OPEN_AFTER_MS);
+        // Переводчик уже развёрнут во весь экран (запуск ярлыка повторно): кнопок нет — сразу к разрешениям
+        // (через 1,5 с после запуска — чтобы верхняя панель Canvas, если она есть, успела появиться)
+        if (!openClicked && !found.canvasScreen && found.translatorVisible && now - armedAt > 1500) {
+            expandResult = "Переводчик уже был открыт";
+            if (!p.getBoolean(Prefs.AUTO_PERMS, true)) {
+                finish(expandResult, 300);
+                return;
+            }
+            expanded = true;
+            expandedAt = now;
+            Prefs.extend(this, 15_000, expandResult + "; прошу доступ к микрофону и камере…");
+            schedule(300);
+            return;
+        }
+
+        // Уже на экране Canvas (вкладки «Код» / «Предварительный просмотр») — «Открыть» не нужно, сразу разворачиваем
+        boolean mayExpand = openClicked || found.canvasScreen || (found.open == null && now - armedAt > EXPAND_WITHOUT_OPEN_AFTER_MS);
         // Подписи у значка нет — на экране Canvas ищем кнопку по месту (через секунду после «Открыть», когда экран встал)
         if (found.expand == null && mayExpand && found.canvasScreen && now - lastClickAt > 1000) {
             found.expand = expandByPosition(found.topButtons);
@@ -128,8 +278,7 @@ public class AutoClickService extends AccessibilityService {
                 expandResult = (openClicked ? "Нажато «" + openedLabel + "», затем «" : "Нажато «") + expLabel
                         + "» за " + (now - armedAt) / 100 / 10.0 + " с";
                 if (!p.getBoolean(Prefs.AUTO_PERMS, true)) {
-                    Prefs.disarm(this, expandResult);
-                    session = 0;
+                    finish(expandResult, 700); // дать Canvas развернуться под заставкой
                     return;
                 }
                 expanded = true;
@@ -164,22 +313,41 @@ public class AutoClickService extends AccessibilityService {
         boolean dialog = f.permissionText && f.allow != null;
 
         if (allowTaps > 0 && !dialog) {
-            Prefs.disarm(this, expandResult + "; доступ к микрофону и камере разрешён");
-            session = 0;
+            // После «Разрешить» переводчик перезагружается — пусть сделает это под заставкой
+            finish(expandResult + "; доступ к микрофону и камере разрешён"
+                    + (splashLiftedForAllow ? " (заставку пришлось убрать на время нажатия)" : ""), 1500);
             return;
         }
         if (dialog) {
-            // Ещё одно касание — если окно не закрылось за секунду после прошлого
-            if (allowTaps < 3 && now - lastAllowTapAt > 1200 && tapCenter(f.allow)) {
-                allowTaps++;
-                lastAllowTapAt = now;
+            if (allowTaps < 3 && now - lastAllowTapAt > 1200) {
+                // Окно разрешений может не принимать касания, пока поверх что-то нарисовано (защита Android).
+                // Первое касание — сквозь заставку; не сработало — убираем её на мгновение, нажимаем и возвращаем
+                if (allowTaps >= 1 && splash != null) {
+                    splashLiftedForAllow = true;
+                    removeSplashNow();
+                    AccessibilityNodeInfo target = f.allow;
+                    handler.postDelayed(() -> {
+                        tapCenter(target);
+                        handler.postDelayed(this::showSplash, 500);
+                    }, 120);
+                    allowTaps++;
+                    lastAllowTapAt = now;
+                } else if (tapCenter(f.allow)) {
+                    allowTaps++;
+                    lastAllowTapAt = now;
+                }
             }
             schedule(400);
             return;
         }
 
-        // Окна пока нет: касаемся полоски; если окно так и не появилось — повторяем раз в 3 секунды (до 3 раз)
-        if (warmTaps < 3 && (warmupAt == 0 || now - warmupAt > 3000)) {
+        // Касались полоски дважды, а окна разрешений так и нет — значит, доступ уже есть
+        if (warmTaps >= 2 && now - warmupAt > 2500) {
+            finish(expandResult + "; окно разрешений не появилось — похоже, доступ уже есть", 200);
+            return;
+        }
+        // Окна пока нет: касаемся полоски; если окно не появилось — ещё раз через 3 секунды
+        if (warmTaps < 2 && (warmupAt == 0 || now - warmupAt > 3000)) {
             AccessibilityNodeInfo warm = null;
             for (AccessibilityNodeInfo r : roots) if ((warm = findLabel(r, Prefs.WARMUP_LABEL, 0)) != null) break;
             if (tapWarmupStrip(warm, roots)) {
@@ -270,6 +438,7 @@ public class AutoClickService extends AccessibilityService {
         AccessibilityNodeInfo open;    // последняя подходящая — у самого свежего Canvas в чате
         AccessibilityNodeInfo expand;  // первая подходящая
         boolean canvasScreen;          // вверху вкладки «Код» / «Предварительный просмотр» — открыт экран Canvas
+        boolean translatorVisible;     // на экране сам переводчик (его скрытая кнопка «Подготовить микрофон и камеру»)
         final List<AccessibilityNodeInfo> topButtons = new ArrayList<>();
     }
 
@@ -322,6 +491,8 @@ public class AutoClickService extends AccessibilityService {
 
     private void walk(AccessibilityNodeInfo n, int depth, List<String> openLabels, List<String> expandLabels, Found found) {
         if (n == null || depth > MAX_DEPTH) return;
+        // Скрытая кнопка переводчика прозрачная — Android может считать её невидимой, поэтому проверяем без этого условия
+        if (Prefs.WARMUP_LABEL.equals(labelOf(n))) found.translatorVisible = true;
         if (n.isVisibleToUser()) {
             boolean top = inTopBar(n);
             String label = labelOf(n);
