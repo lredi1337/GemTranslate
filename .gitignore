@@ -5,3 +5,8 @@ android/app/build/
 android/local.properties
 *.jks
 *.keystore
+waiter/tools/node_modules/
+waiter/android/.gradle/
+waiter/android/build/
+waiter/android/app/build/
+waiter/android/local.properties

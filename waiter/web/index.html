@@ -1,0 +1,1870 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Приём заказов</title>
+    <!-- Стили Tailwind встраиваются сборкой (waiter/tools/build.js): приложение работает без интернета -->
+    <style id="tailwind">/* tailwind */</style>
+    <style>
+        html, body { height: 100%; }
+        body {
+            font-family: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+            background: #020617;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            overscroll-behavior: none;
+        }
+        input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
+        #appShell { position: fixed; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+        /* Вырез экрана сверху и полоса жестов снизу */
+        .top-safe { padding-top: env(safe-area-inset-top); }
+        .bottom-safe { padding-bottom: max(0.625rem, env(safe-area-inset-bottom)); }
+
+        .table-node {
+            touch-action: none;
+            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, background-color 0.2s ease;
+        }
+        .table-node:active { transform: translate(-50%, -50%) scale(0.92) !important; }
+        .editor-grid {
+            background-image:
+                linear-gradient(to right, rgba(99, 102, 241, 0.18) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(99, 102, 241, 0.18) 1px, transparent 1px);
+            background-size: 5% 5%;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Долгое нажатие на позицию: полоска заполняется, пока держишь палец */
+        .press { position: relative; overflow: hidden; }
+        .press::after {
+            content: ''; position: absolute; inset: 0; pointer-events: none;
+            background: rgba(244, 63, 94, 0.22); transform: scaleX(0); transform-origin: left;
+        }
+        .press.is-stopped::after { background: rgba(16, 185, 129, 0.22); }
+        .press.pressing::after { transform: scaleX(1); transition: transform 0.45s linear 0.05s; }
+
+        button:disabled { cursor: default; }
+    </style>
+</head>
+<body class="text-slate-100 w-screen h-screen overflow-hidden">
+    <div id="appShell" class="flex flex-col w-full h-full overflow-hidden bg-slate-950">
+
+        <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
+        <header class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shrink-0 z-20 top-safe">
+            <div class="px-3 h-14 flex items-center justify-between gap-2">
+                <div class="min-w-0 flex-1">
+                    <h1 class="font-bold text-base leading-tight text-white flex items-center gap-1.5 whitespace-nowrap">
+                        Приём заказов
+                    </h1>
+                    <p id="headerSubtitle" class="text-xs text-slate-400 truncate">Нажми на стол, чтобы принять заказ</p>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="openStopListModal()" class="h-10 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-bold border border-rose-500/30 transition flex items-center gap-1.5">
+                        <span>🚫 Стоп</span>
+                        <span id="stopListBadge" class="hidden bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-px rounded-full">0</span>
+                    </button>
+                    <button id="editModeBtn" onclick="toggleEditMode()" aria-label="Редактировать схему зала" title="Схема зала" class="h-10 w-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- БАННЕР РЕДАКТИРОВАНИЯ СХЕМЫ -->
+        <div id="editBanner" class="hidden bg-indigo-600 text-white px-3 py-2 text-xs font-medium flex items-center gap-2 shrink-0">
+            <span class="flex-1 leading-snug">Двигай столы. Нажми на стол — сменить номер или удалить.</span>
+            <button onclick="addTable()" class="shrink-0 h-8 px-2.5 rounded-lg bg-white/15 font-bold">+ Стол</button>
+            <button onclick="resetLayoutConfirm()" class="shrink-0 h-8 px-2.5 rounded-lg bg-white/15 font-bold">Сброс</button>
+            <button onclick="toggleEditMode()" class="shrink-0 h-8 px-2.5 rounded-lg bg-white text-indigo-700 font-extrabold">Готово</button>
+        </div>
+
+        <!-- КАРТА ЗАЛА -->
+        <main class="flex-1 relative overflow-hidden p-2 sm:p-4 flex items-center justify-center bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px]">
+            <div id="floorMap" class="relative w-full h-full max-w-2xl max-h-[780px] bg-slate-900/60 border border-slate-800/80 rounded-3xl shadow-2xl overflow-hidden">
+                <div class="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest text-slate-600 font-semibold pointer-events-none">Верхний ряд</div>
+                <div class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest text-slate-600 font-semibold pointer-events-none">Вход / Нижний ряд</div>
+                <div id="tablesContainer" class="w-full h-full relative"></div>
+            </div>
+        </main>
+
+        <!-- НИЖНЯЯ ПОДСКАЗКА -->
+        <footer class="bg-slate-900 border-t border-slate-800 px-4 pt-2.5 bottom-safe shrink-0 flex items-center justify-between text-xs text-slate-400">
+            <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Не вбито</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Вбито в POS</span>
+            </div>
+            <span id="activeOrdersCount" class="font-bold text-slate-300">Активных: 0</span>
+        </footer>
+
+        <!-- ЭКРАН ЗАКАЗА ПО СТОЛУ -->
+        <div id="orderScreen" class="fixed inset-0 bg-slate-950 z-30 hidden flex flex-col">
+            <div class="bg-slate-900 border-b border-slate-800 shrink-0 top-safe">
+                <div class="px-3 h-14 flex items-center gap-2">
+                    <button onclick="openRenameModal()" class="shrink-0" aria-label="Сменить номер стола">
+                        <span id="orderTableBadge" class="inline-block min-w-[2.25rem] text-center px-2 py-1 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-base">9</span>
+                    </button>
+                    <div class="min-w-0 flex-1">
+                        <button onclick="openRenameModal()" class="block max-w-full text-left">
+                            <h2 id="orderTableTitle" class="font-bold text-sm text-white truncate">Стол №9 <span class="text-slate-500">✎</span></h2>
+                        </button>
+                        <button id="orderGuestsSubtitle" onclick="openGuestCountEdit()" class="block text-[11px] text-slate-400 text-left">Гостей: 2 ✎</button>
+                    </div>
+                    <button onclick="copyOrder()" class="shrink-0 w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-base flex items-center justify-center" aria-label="Скопировать заказ" title="Скопировать заказ">📋</button>
+                    <button onclick="confirmClearTableOrder()" class="shrink-0 h-10 px-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-bold">Закрыть стол</button>
+                </div>
+            </div>
+
+            <!-- ГОСТИ -->
+            <div class="bg-slate-900/80 border-b border-slate-800 px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                <div id="guestTabsContainer" class="flex items-center gap-1.5 shrink-0"></div>
+                <button onclick="addGuestToTable()" class="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold shrink-0">+ Гость</button>
+                <button id="tabAllGuests" onclick="selectGuestTab('all')" class="ml-auto h-9 px-3 rounded-xl text-xs font-bold shrink-0 transition">Весь стол</button>
+            </div>
+
+            <!-- ТЕКУЩИЙ ЗАКАЗ -->
+            <div id="currentOrderBox" class="bg-slate-900/50 border-b border-slate-800 max-h-[34%] overflow-y-auto no-scrollbar px-3 py-2 shrink-0"></div>
+
+            <!-- ПОИСК, КУХНЯ / БАР, КАТЕГОРИИ -->
+            <div class="bg-slate-950 px-3 pt-2.5 pb-2 border-b border-slate-800/80 shrink-0 space-y-2">
+                <div class="flex gap-2">
+                    <div class="relative flex-1">
+                        <input id="menuSearchInput" type="search" enterkeyhint="search" autocomplete="off" oninput="onSearchMenu(this.value)" placeholder="Поиск блюда или напитка..." class="w-full h-10 bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-9 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 [&::-webkit-search-cancel-button]:hidden">
+                        <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none">🔍</span>
+                        <button id="clearSearchBtn" onclick="clearMenuSearch()" class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-400 text-sm" aria-label="Очистить поиск">✕</button>
+                    </div>
+                    <div class="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800 shrink-0">
+                        <button id="btnGroupKitchen" onclick="switchMenuGroup('kitchen')" class="px-3 rounded-lg text-xs font-bold transition">Кухня</button>
+                        <button id="btnGroupBar" onclick="switchMenuGroup('bar')" class="px-3 rounded-lg text-xs font-bold transition">Бар</button>
+                    </div>
+                </div>
+                <div id="categoriesBar" class="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5"></div>
+            </div>
+
+            <!-- СПИСОК БЛЮД -->
+            <div id="menuItemsList" class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2"></div>
+
+            <!-- НИЖНЯЯ ПАНЕЛЬ: POS -->
+            <div class="bg-slate-900 border-t border-slate-800 px-3 pt-2.5 bottom-safe flex items-center justify-between gap-2 shrink-0">
+                <button id="togglePosSyncedBtn" onclick="toggleTablePosSynced()" class="flex-1 h-11 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition"></button>
+                <button onclick="closeOrderScreen()" class="h-11 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs">На карту</button>
+            </div>
+        </div>
+
+        <!-- ОКНО: КОЛИЧЕСТВО ГОСТЕЙ -->
+        <div id="guestCountModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-center">
+                <div id="guestModalBadge" class="min-w-[3rem] h-12 px-2 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-xl inline-flex items-center justify-center mx-auto mb-2">9</div>
+                <h3 class="text-base font-bold text-white mb-1">Сколько гостей за столом?</h3>
+                <p id="guestModalHint" class="text-xs text-slate-400 mb-4">Чтобы удобно разделить заказ по гостям</p>
+                <div class="grid grid-cols-4 gap-2 mb-2">
+                    <button onclick="confirmGuestCount(1)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">1</button>
+                    <button onclick="confirmGuestCount(2)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">2</button>
+                    <button onclick="confirmGuestCount(3)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">3</button>
+                    <button onclick="confirmGuestCount(4)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">4</button>
+                    <button onclick="confirmGuestCount(5)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">5</button>
+                    <button onclick="confirmGuestCount(6)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">6</button>
+                    <button onclick="confirmGuestCount(7)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">7</button>
+                    <button onclick="confirmGuestCount(8)" class="py-3.5 rounded-2xl bg-slate-800 active:bg-emerald-500 active:text-slate-950 font-extrabold text-lg border border-slate-700 transition">8</button>
+                </div>
+                <button onclick="closeGuestCountModal()" class="w-full py-2.5 text-xs text-slate-400 hover:text-white">Отмена</button>
+            </div>
+        </div>
+
+        <!-- ОКНО: ОПЦИЯ И ПРИМЕЧАНИЕ К БЛЮДУ -->
+        <div id="modifierModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl">
+                <div class="flex items-start justify-between gap-2 mb-3">
+                    <div class="min-w-0">
+                        <span id="modCategoryTag" class="text-[10px] uppercase tracking-wider font-bold text-emerald-400">Опция</span>
+                        <h3 id="modItemName" class="text-base font-extrabold text-white leading-snug mt-0.5">Название блюда</h3>
+                    </div>
+                    <button onclick="closeModifierModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <p id="modPromptLabel" class="text-xs text-slate-300 font-semibold mb-2.5">Выбери вариант:</p>
+                <div id="modOptionsGrid" class="grid grid-cols-1 gap-2 mb-4 max-h-[45vh] overflow-y-auto no-scrollbar"></div>
+                <input id="modCustomNote" type="text" enterkeyhint="done" maxlength="120" placeholder="Примечание (без лука, лёд отдельно)..." class="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 mb-4">
+                <button id="modConfirmBtn" onclick="confirmModifierSelection()" class="w-full py-3.5 rounded-2xl font-extrabold text-sm transition">Добавить в заказ</button>
+            </div>
+        </div>
+
+        <!-- ОКНО: ПОЗИЦИЯ В ЗАКАЗЕ (перенести, примечание, удалить) -->
+        <div id="itemSheet" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl">
+                <div class="flex items-start justify-between gap-2 mb-3">
+                    <div class="min-w-0">
+                        <span class="text-[10px] uppercase tracking-wider font-bold text-amber-400">Позиция в заказе</span>
+                        <h3 id="itemSheetName" class="text-base font-extrabold text-white leading-snug mt-0.5"></h3>
+                        <div id="itemSheetOption" class="text-xs text-emerald-300 font-semibold mt-0.5"></div>
+                    </div>
+                    <button onclick="closeItemSheet()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <p class="text-xs text-slate-300 font-semibold mb-2">Чей заказ:</p>
+                <div id="itemSheetGuests" class="flex flex-wrap gap-1.5 mb-4"></div>
+                <input id="itemSheetNote" type="text" enterkeyhint="done" maxlength="120" placeholder="Примечание..." class="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 mb-4">
+                <div class="flex gap-2">
+                    <button onclick="deleteItemFromSheet()" class="px-4 py-3 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/30 font-bold text-sm">Удалить</button>
+                    <button onclick="saveItemSheet()" class="flex-1 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-sm">Готово</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ОКНО: НОМЕР СТОЛА -->
+        <div id="renameModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl p-5 shadow-2xl">
+                <h3 class="text-base font-bold text-white mb-1">Номер столика</h3>
+                <p class="text-xs text-slate-400 mb-4">Укажи номер или название стола</p>
+                <input id="renameInput" type="text" maxlength="5" enterkeyhint="done" autocomplete="off" placeholder="Например: 11" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-center text-xl font-extrabold text-white focus:outline-none focus:border-emerald-500 mb-4">
+                <div class="flex gap-2">
+                    <button onclick="closeRenameModal()" class="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-sm">Отмена</button>
+                    <button onclick="saveTableName()" class="flex-1 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-bold text-sm">Сохранить</button>
+                </div>
+                <button id="deleteTableBtn" onclick="deleteActiveTable()" class="hidden w-full mt-3 py-2.5 rounded-xl text-rose-400 text-sm font-bold">Удалить стол со схемы</button>
+            </div>
+        </div>
+
+        <!-- ОКНО: ПОДТВЕРЖДЕНИЕ -->
+        <div id="confirmModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-center">
+                <h3 id="confirmTitle" class="text-base font-bold text-white mb-1">Подтверждение</h3>
+                <p id="confirmDesc" class="text-xs text-slate-400 mb-5">Вы уверены?</p>
+                <div class="flex gap-2">
+                    <button onclick="closeConfirmModal()" class="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-sm">Отмена</button>
+                    <button id="confirmActionBtn" class="flex-1 py-2.5 rounded-xl bg-rose-500 text-white font-bold text-sm">Да</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ОКНО: СТОП-ЛИСТ -->
+        <div id="stopListModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl max-h-[92%] flex flex-col">
+                <div class="flex items-start justify-between gap-2 mb-3 shrink-0">
+                    <div>
+                        <h3 class="text-base font-extrabold text-white">🚫 Стоп-лист</h3>
+                        <p class="text-xs text-slate-400 leading-snug">Вставь текст из рабочего чата как есть — разберу опечатки, сокращения и списки через запятую. Одну позицию можно поставить на стоп, зажав её в меню.</p>
+                    </div>
+                    <button onclick="closeStopListModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <div class="overflow-y-auto no-scrollbar flex-1 min-h-0">
+                    <textarea id="stopListInput" rows="5" placeholder="Вставь сюда стоп-лист из чата:&#10;❌ Гороховый суп&#10;нет бивины&#10;пепси закончилась..." class="w-full bg-slate-950 border border-slate-700 rounded-2xl p-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 mb-2.5"></textarea>
+                    <div class="flex gap-2 mb-3">
+                        <button id="pasteStopBtn" onclick="pasteStopFromClipboard()" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700">📋 Вставить</button>
+                        <button id="applyStopBtn" onclick="applyStopListFromText()" class="flex-1 py-2.5 px-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold text-xs shadow-lg shadow-rose-500/20 transition flex items-center justify-center gap-2">Загрузить стоп-лист</button>
+                    </div>
+                    <div id="stopResult" class="hidden mb-3"></div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Сейчас на стопе (<span id="stopListActiveCount">0</span>)</span>
+                        <button id="clearStopBtn" onclick="clearStopList()" class="text-[11px] font-bold text-slate-400 hover:text-white px-2 py-1 rounded bg-slate-800">Снять всё</button>
+                    </div>
+                    <div id="activeStopListContainer" class="space-y-1.5 min-h-[60px]"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- УВЕДОМЛЕНИЕ -->
+        <div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-24 w-max max-w-[92%] bg-slate-800 border border-slate-600 text-white text-xs font-semibold pl-4 pr-2 py-1.5 rounded-2xl shadow-xl z-[60] opacity-0 pointer-events-none transition-opacity duration-200 flex items-center gap-2 min-h-[2.5rem]">
+            <span id="toastText" class="py-1"></span>
+            <button id="toastAction" class="hidden shrink-0 px-3 py-1.5 rounded-full bg-white/10 text-amber-300 font-extrabold"></button>
+        </div>
+    </div>
+
+    <script>
+        // Мост в Android-приложение (в обычном браузере его нет — тогда работают веб-замены)
+        const Native = window.Android || null;
+
+        // ==========================================
+        // БАЗА МЕНЮ (КУХНЯ 1–17 И БАР 18–42)
+        // ==========================================
+        const MODIFIER_CONFIGS = {
+            breakfast_drink: { prompt: 'Напиток в подарок к завтраку:', options: ['☕ Американо', '🍊 Апельсиновый сок', 'Без напитка'] },
+            porridge_type: {
+                prompt: 'Какую кашу и напиток в подарок?',
+                options: ['🥣 Овсяная + ☕ Американо', '🥣 Овсяная + 🍊 Апельсиновый сок', '🥣 Овсяная (без напитка)', '🍚 Рисовая + ☕ Американо', '🍚 Рисовая + 🍊 Апельсиновый сок', '🍚 Рисовая (без напитка)']
+            },
+            pancake_topping: { prompt: 'Выбери добавку к блинам:', options: ['Сгущёнка', 'Сметана', 'Джем', 'Без добавки'] },
+            pancake_new: { prompt: 'Выбери добавку к домашним блинам:', options: ['Мёд', 'Сметана', 'Сгущённое молоко', 'Джем'] },
+            okroshka_base: { prompt: 'На чём готовить окрошку?', options: ['На квасе', 'На минеральной воде с йогуртом'] },
+            salad_dressing: { prompt: 'Чем заправить салат?', options: ['Оливковое масло', 'Сметана'] },
+            side_dish: { prompt: 'Выбери гарнир к котлетам:', options: ['Картофельное пюре', 'Картофель фри', 'Картофель по-деревенски', 'Рис отварной', 'Греча'] },
+            pelmeni_opts: { prompt: 'Как приготовить и подать пельмени?', options: ['Отварные с бульоном', 'Отварные без бульона', 'Жареные'] },
+            draft_beer: { prompt: 'Объём разливного пива:', options: ['330 мл', '500 мл'] },
+            smoothie_milk: { prompt: 'На каком молоке сделать смузи?', options: ['Обычное молоко', 'Кокосовое молоко'] },
+            wine_vol: { prompt: 'Объём вина:', options: ['Бокал 150 мл', 'Бутылка 750 мл'] }
+        };
+
+        // Подсказка под названием позиции с опцией
+        const MOD_HINTS = {
+            breakfast_drink: ['text-amber-400', '🎁 + Американо или сок'],
+            porridge_type: ['text-amber-400', '🥣 Овсяная/рисовая + 🎁 напиток'],
+            pancake_topping: ['text-amber-400', '🍯 Выбор добавки'],
+            pancake_new: ['text-amber-400', '🍯 Выбор добавки'],
+            okroshka_base: ['text-emerald-400', '🥣 Квас или мин. вода с йогуртом'],
+            salad_dressing: ['text-emerald-400', '🥗 Масло или сметана'],
+            side_dish: ['text-amber-400', '🍽️ Гарнир на выбор'],
+            pelmeni_opts: ['text-amber-400', '🥟 Отварные/жареные, бульон'],
+            draft_beer: ['text-sky-400', '🍺 330 мл / 500 мл'],
+            smoothie_milk: ['text-sky-400', '🥥 Обычное / кокосовое'],
+            wine_vol: ['text-rose-400', '🍷 150 мл / 750 мл']
+        };
+
+        // Позиция меню на стопе → какие варианты опций она тоже закрывает (кроме совпадения по словам)
+        const OPTION_ALIASES = { 'Фреш Апельсиновый': ['апельсиновый сок'] };
+
+        const MENU_CATEGORIES = [
+            { id: 'k_01_1', group: 'kitchen', title: '1. Завтраки', items: [
+                { name: 'Большой домашний завтрак', mod: 'breakfast_drink' },
+                { name: 'English Breakfast', mod: 'breakfast_drink' },
+                { name: 'Омлет с сыром и овощами', mod: 'breakfast_drink' },
+                { name: 'Авокадо-тост с лососем', mod: 'breakfast_drink' },
+                { name: 'Авокадо-тост с двумя яйцами пашот', mod: 'breakfast_drink' },
+                { name: 'Блины с добавкой на выбор', mod: 'pancake_topping' },
+                { name: 'Блины с творогом', mod: 'breakfast_drink' },
+                { name: 'Молочная каша', mod: 'porridge_type' },
+                { name: 'Тропический йогурт-боул', mod: 'breakfast_drink' },
+                { name: 'Bánh mì с яйцом', mod: 'breakfast_drink' }
+            ] },
+            { id: 'k_02', group: 'kitchen', title: '2. Закуски', items: [
+                { name: 'Овощная тарелка' }, { name: 'Сырное ассорти' }, { name: 'Фруктовая тарелка' },
+                { name: 'Малосольные огурцы с чесноком' }, { name: 'Морковь по-корейски' },
+                { name: 'Слабосолёный лосось с укропом и лаймом' }, { name: 'Шпротный набор' }
+            ] },
+            { id: 'k_03', group: 'kitchen', title: '3. К пиву', items: [
+                { name: 'Сушёная рыба' }, { name: 'Копчёная рыба' }, { name: 'Фисташки солёные' }, { name: 'Арахис жареный' }
+            ] },
+            { id: 'k_04', group: 'kitchen', title: '4. Супы', items: [
+                { name: 'Борщ' }, { name: 'Лагман с говядиной' }, { name: 'Солянка из мясных деликатесов' },
+                { name: 'Куриный суп' }, { name: 'Уха из красной рыбы' },
+                { name: 'Окрошка с варёной колбасой', mod: 'okroshka_base' },
+                { name: 'Окрошка с отварной говядиной', mod: 'okroshka_base' },
+                { name: 'Окрошка овощная', mod: 'okroshka_base' }
+            ] },
+            { id: 'k_05', group: 'kitchen', title: '5. Горячие закуски', items: [
+                { name: 'Самса с бараниной' }, { name: 'Кутабы с мясом и картофелем' }, { name: 'Кутабы со шпинатом и сыром' },
+                { name: 'Кутабы с сыром' }, { name: 'Крылья Кока-Кола' }, { name: 'Сельдь с картофелем' },
+                { name: 'Куриные наггетсы' }, { name: 'Жареные тигровые креветки' }, { name: 'Гренки чесночные' }
+            ] },
+            { id: 'k_06', group: 'kitchen', title: '6. Сеты на двоих', items: [
+                { name: 'Сет морской к пиву' }, { name: 'Сет мясной к пиву' }
+            ] },
+            { id: 'k_07', group: 'kitchen', title: '7. Салаты', items: [
+                { name: 'Сельдь под шубой' }, { name: 'Салат из свежих овощей', mod: 'salad_dressing' },
+                { name: 'Греческий салат' }, { name: 'Цезарь с курицей' }, { name: 'Цезарь с тигровыми креветками' },
+                { name: 'Цезарь со слабосолёным лососем' }, { name: 'Оливье с варёной колбасой' },
+                { name: 'Оливье с отварной говядиной' }, { name: 'Оливье овощной' }
+            ] },
+            { id: 'k_08', group: 'kitchen', title: '8. Горячие блюда', items: [
+                { name: 'Щёки с картофельным пюре' }, { name: 'Плов с бараниной' },
+                { name: 'Куриные котлеты', mod: 'side_dish' }, { name: 'Котлеты «Как у мамы»', mod: 'side_dish' },
+                { name: 'Котлетки из лосося с рисом и овощами' }
+            ] },
+            { id: 'k_09', group: 'kitchen', title: '9. Мангал', items: [
+                { name: 'Шашлык из свинины' }, { name: 'Шашлык из куриного бедра' }
+            ] },
+            { id: 'k_10', group: 'kitchen', title: '10. Гарниры', items: [
+                { name: 'Картофельное пюре' }, { name: 'Картофель фри' }, { name: 'Картофель по-деревенски' },
+                { name: 'Рис отварной' }, { name: 'Греча' }
+            ] },
+            { id: 'k_11', group: 'kitchen', title: '11. Домашняя лепка', items: [
+                { name: 'Пельмени (свинина и говядина)', mod: 'pelmeni_opts' }, { name: 'Пельмени (курица)', mod: 'pelmeni_opts' },
+                { name: 'Пельмени (говядина)', mod: 'pelmeni_opts' }, { name: 'Манты с говядиной на пару' },
+                { name: 'Манты с говядиной обжаренные' }, { name: 'Манты с тыквой на пару' },
+                { name: 'Манты с тыквой обжаренные' }, { name: 'Вареники с картофелем' }
+            ] },
+            { id: 'k_12', group: 'kitchen', title: '12. Блины и сырники', items: [
+                { name: 'Сырники по секретному рецепту' }, { name: 'Домашние блины', mod: 'pancake_new' },
+                { name: 'Блины с творогом' }, { name: 'Домашние блины с лососем' }
+            ] },
+            { id: 'k_13', group: 'kitchen', title: '13. Пасты', items: [
+                { name: 'Спагетти с курицей и чипсами из бекона' }, { name: 'Спагетти с морепродуктами и томатами черри' }
+            ] },
+            { id: 'k_14', group: 'kitchen', title: '14. Пицца', items: [
+                { name: 'Маргарита' }, { name: 'Пепперони' }, { name: 'Четыре сыра' }
+            ] },
+            { id: 'k_15', group: 'kitchen', title: '15. Бургеры', items: [
+                { name: 'Фирменный бургер «SOUL»' }, { name: 'Бургер с курицей' }, { name: 'Вегетарианский бургер с фалафелем' }
+            ] },
+            { id: 'k_16', group: 'kitchen', title: '16. Шаурма', items: [
+                { name: 'Шаурма «SOUL» с курицей' }, { name: 'Шаурма «SOUL» с фалафелем' },
+                { name: 'Шаурма восточная с курицей' }, { name: 'Шаурма восточная с фалафелем' }
+            ] },
+            { id: 'k_17', group: 'kitchen', title: '17. Азиатская кухня', items: [
+                { name: 'Фо Га с курицей' }, { name: 'Фо Бо с говядиной' }, { name: 'Га Сао с курицей' },
+                { name: 'Бо Сао с говядиной' }, { name: 'Жареный рис с морепродуктами' }, { name: 'Жареная лапша с овощами' },
+                { name: 'Жареная лапша с курицей' }, { name: 'Жареная лапша с говядиной' }, { name: 'Жареная лапша с морепродуктами' }
+            ] },
+            { id: 'b_18_19', group: 'bar', title: '18–19 Кофе', items: [
+                { name: 'Эспрессо' }, { name: 'Двойной эспрессо' }, { name: 'Американо' }, { name: 'Капучино' },
+                { name: 'Кофе с молоком (горячий)' }, { name: 'Кофе со сгущённым молоком' },
+                { name: 'Чёрный кофе (горячий)' }, { name: 'Чёрный кофе со льдом' }
+            ] },
+            { id: 'b_20_21', group: 'bar', title: '20–21 Чай', items: [
+                { name: 'Имбирный дзен (чайник)' }, { name: 'Мятное яблоко (чайник)' }, { name: 'Тропический микс (чайник)' },
+                { name: 'Манго Санрайз (чайник)' }, { name: 'Шу Пуэр' }, { name: 'Да Хун Пао' }, { name: 'Те Гуань Инь' }, { name: 'Габа Премиум' }
+            ] },
+            { id: 'b_22_23', group: 'bar', title: '22–23 Фреши и маракуйя', items: [
+                { name: 'Фреш Апельсиновый' }, { name: 'Фреш Ананасовый' }, { name: 'Фреш Арбузный' }, { name: 'Фреш Морковный' },
+                { name: 'Фреш Яблочный' }, { name: 'Фреш Ананас + апельсин' }, { name: 'Маракуйя (около 2 плодов)' },
+                { name: 'Апельсин + маракуйя' }, { name: 'Ананас + маракуйя' }
+            ] },
+            { id: 'b_24', group: 'bar', title: '24 Смузи', items: [
+                { name: 'Манго (смузи)', mod: 'smoothie_milk' }, { name: 'Банан (смузи)', mod: 'smoothie_milk' },
+                { name: 'Ананас (смузи)', mod: 'smoothie_milk' }, { name: 'Манго + маракуйя (смузи)', mod: 'smoothie_milk' },
+                { name: 'Манго + банан (смузи)', mod: 'smoothie_milk' }, { name: 'Манго + апельсин (смузи)', mod: 'smoothie_milk' },
+                { name: 'Банан + апельсин (смузи)', mod: 'smoothie_milk' }
+            ] },
+            { id: 'b_25_26', group: 'bar', title: '25–26 Вода и газировка', items: [
+                { name: 'Томатный сок' }, { name: 'Pepsi' }, { name: 'Coca-Cola Original' }, { name: 'Coca-Cola Zero' },
+                { name: 'Fanta Orange' }, { name: 'Sprite' }, { name: 'Schweppes Soda Water' }, { name: 'Schweppes Tonic Water' },
+                { name: 'Schweppes Dry Ginger Ale' }, { name: 'Aquafina' }, { name: 'Perrier' }
+            ] },
+            { id: 'b_27_30', group: 'bar', title: '27–30 Милкшейки и лимонады', items: [
+                { name: 'Милкшейк Ванильный' }, { name: 'Милкшейк Шоколадный' }, { name: 'Милкшейк Клубничный' },
+                { name: 'Милкшейк Манго' }, { name: 'Милкшейк Кокос' }, { name: 'Милкшейк Дуриан' },
+                { name: 'Лимонад Сливочная жвачка (950 мл)' }, { name: 'Мохито без алкоголя (950 мл)' },
+                { name: 'Лимонад Персик — маракуйя (950 мл)' }, { name: 'Tamarind Lemonade' }, { name: 'Tamarind Passion' },
+                { name: 'Tamarind Mango' }, { name: 'Spicy Tamarind' }, { name: 'Amber Hive — мёд с сотами' }
+            ] },
+            { id: 'b_35', group: 'bar', title: '35 Пиво и сидр', items: [
+                { name: 'Sapporo Light (разливное)', mod: 'draft_beer' }, { name: 'Sapporo Dark (разливное)', mod: 'draft_beer' },
+                { name: 'Kronenbourg 1664 Blanc (разливное)', mod: 'draft_beer' }, { name: 'Huda (разливное)', mod: 'draft_beer' },
+                { name: 'Saigon Lager' }, { name: 'Bivina' }, { name: 'Saigon Special' }, { name: 'Bia Hơi Hà Nội' },
+                { name: 'Tiger' }, { name: 'Heineken' }, { name: 'Kronenbourg 1664 Blanc (банка)' }, { name: 'Corona Extra' },
+                { name: 'Tuborg Green' }, { name: 'Tuborg Ice' }, { name: 'Tuborg' }, { name: 'Heineken 0.0' },
+                { name: 'Somersby Apple' }, { name: 'Somersby Blackberry' }
+            ] },
+            { id: 'b_31_32', group: 'bar', title: '31–32 Коктейли и шоты', items: [
+                { name: 'Screwdriver' }, { name: 'Rum & Cola' }, { name: 'Gin & Tonic' }, { name: 'Whiskey & Cola' },
+                { name: 'Tequila Sunrise' }, { name: 'Apple Tini' }, { name: 'Basil Smash' }, { name: 'Hemingway Mango Daiquiri' },
+                { name: 'Campari Tonic' }, { name: 'White Russian' }, { name: 'Baileys Martini' }, { name: 'Margarita' },
+                { name: 'Negroni' }, { name: 'Bellini' }, { name: 'Pornstar Martini' }, { name: 'Aperol Spritz' },
+                { name: 'Martini Extra Dry & Rosé' }, { name: 'Мадлстайн' }, { name: 'Шот Банановая настойка' },
+                { name: 'Шот Арбузная настойка' }, { name: 'Шот Лимонная настойка Extra' }, { name: 'Шот Сливочная Cherry' },
+                { name: 'Шот Brain Hemorrhage' }, { name: 'Шот B-52' }
+            ] },
+            { id: 'b_33_34', group: 'bar', title: '33–34 Вино и игристое', items: [
+                { name: 'Martini Asti (750 мл)' }, { name: 'Martini Rosé Sparkling (750 мл)' }, { name: 'Martini Prosecco (750 мл)' },
+                { name: 'Mionetto Prosecco Brut', mod: 'wine_vol' }, { name: 'Tavernello Pinot Grigio', mod: 'wine_vol' },
+                { name: 'G7 / Ventisquero Sauvignon Blanc', mod: 'wine_vol' }, { name: 'Ventisquero Clásico Chardonnay (750 мл)' },
+                { name: 'Claude Val Blanc (750 мл)' }, { name: 'Vang Dalat Classic Red', mod: 'wine_vol' },
+                { name: 'Génesis / G7 Cabernet Sauvignon', mod: 'wine_vol' }, { name: 'Claude Val Rouge (750 мл)' }
+            ] },
+            { id: 'b_36_42', group: 'bar', title: '36–42 Крепкий алкоголь', items: [
+                { name: 'Aperol' }, { name: 'Campari' }, { name: 'Martini Bianco' }, { name: 'Martini Extra Dry' },
+                { name: 'Martini Rosso' }, { name: 'Malibu Original' }, { name: 'Kahlúa' }, { name: 'Baileys Original' },
+                { name: 'Triple Sec' }, { name: 'Cointreau' }, { name: 'Jägermeister' }, { name: 'Frangelico' },
+                { name: 'Rượu Nếp Mới Vodka' }, { name: 'Vodka Hà Nội' }, { name: 'Ta Vodka' }, { name: 'Smirnoff Red' },
+                { name: 'Absolut Original' }, { name: 'Beluga Noble' }, { name: 'Grey Goose' }, { name: 'Beefeater London Dry' },
+                { name: 'Bombay Sapphire' }, { name: 'Lady Triệu Contemporary Gin' }, { name: 'ISC Rum Special Quality' },
+                { name: 'ISC Rum Lemon' }, { name: 'ISC Rum Pineapple' }, { name: 'ISC Rum Mango' }, { name: 'Rhum Chauvet Red' },
+                { name: 'Havana Club Añejo 3 Años' }, { name: 'Captain Morgan Black' }, { name: 'Captain Morgan Spiced Gold' },
+                { name: 'Bacardí Carta Blanca' }, { name: 'Bacardí Carta Oro' }, { name: 'Cachaça Thoquino' },
+                { name: 'Bacardí Reserva Ocho 8 Años' }, { name: 'Olmeca Silver' }, { name: 'Olmeca Gold' },
+                { name: 'Olmeca Reposado' }, { name: 'Jose Cuervo Silver' }, { name: 'Jose Cuervo Especial Reposado' },
+                { name: 'Teacher’s Highland Cream' }, { name: 'Johnnie Walker Red Label' }, { name: 'Jim Beam White Label' },
+                { name: 'Ballantine’s Finest' }, { name: 'Jameson' }, { name: 'Johnnie Walker Black Label' },
+                { name: 'Chivas Regal 12 Y.O.' }, { name: 'Jack Daniel’s Old No. 7' }, { name: 'Glenfiddich 12 Y.O.' },
+                { name: 'Chivas Regal 18 Y.O.' }, { name: 'The Macallan 12 Sherry Oak' }
+            ] }
+        ];
+
+        // ==========================================
+        // СХЕМА СТОЛОВ
+        // ==========================================
+        const DEFAULT_TABLES = [
+            { id: 't8', label: '8', x: 22, y: 13 }, { id: 't7', label: '7', x: 41, y: 13 },
+            { id: 't6', label: '6', x: 61, y: 13 }, { id: 't5', label: '5', x: 82, y: 13 },
+            { id: 't10', label: '10', x: 13, y: 29 }, { id: 't_new', label: '?', x: 31, y: 31 },
+            { id: 't9', label: '9', x: 49, y: 31 }, { id: 't4', label: '4', x: 82, y: 36 },
+            { id: 't15', label: '15', x: 14, y: 52 }, { id: 't14', label: '14', x: 35, y: 54 },
+            { id: 't13', label: '13', x: 64, y: 54 }, { id: 't3', label: '3', x: 82, y: 57 },
+            { id: 't18', label: '18', x: 14, y: 76 }, { id: 't17', label: '17', x: 35, y: 76 },
+            { id: 't16', label: '16', x: 64, y: 76 }, { id: 't2', label: '2', x: 82, y: 78 }
+        ];
+
+        // ==========================================
+        // ПОИСК: «ё» = «е», без диакритики, транслит
+        // ==========================================
+        function fold(str) {
+            return String(str || '').toLowerCase().replace(/ё/g, 'е')
+                .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd')
+                .replace(/[’'`]/g, '').replace(/[^a-zа-я0-9]+/g, ' ').trim();
+        }
+        const TR = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'zh', з: 'z', и: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sh', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+        function translit(folded) {
+            return folded.replace(/[а-я]/g, ch => TR[ch] ?? ch).replace(/ph/g, 'f').replace(/[cq]/g, 'k').replace(/y/g, 'i').replace(/w/g, 'v');
+        }
+        function esc(str) {
+            return String(str ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        const ALL_ITEMS = [];
+        MENU_CATEGORIES.forEach(cat => cat.items.forEach(it => {
+            it.group = cat.group;
+            it.catTitle = cat.title;
+            it.fold = fold(it.name);
+            it.tr = translit(it.fold);
+            it.catFold = fold(cat.title);
+            ALL_ITEMS.push(it);
+        }));
+        const MENU_NAMES = [...new Set(ALL_ITEMS.map(i => i.name))];
+        const NAME_BY_FOLD = new Map(MENU_NAMES.map(n => [fold(n), n]));
+
+        // ==========================================
+        // СОСТОЯНИЕ
+        // ==========================================
+        // tables: { id, label, x, y, guestCount, activeGuest, posSynced, openedAt, items: [{ uid, name, group, guest, qty, option, note }] }
+        // stop: названия позиций меню и «ингредиенты» (квас, сметана), которых нет
+        let state = { ts: 0, tables: [], stop: [], removed: [] };
+        let stopSet = new Set();
+
+        let isEditMode = false;
+        let activeTableId = null;
+        let pendingGuestTableId = null;
+        let guestModalMode = 'new';
+        let currentGuestTab = 1;
+        let currentMenuGroup = 'kitchen';
+        let currentCategoryId = 'k_01_1';
+        let searchQuery = '';
+        let pendingModItem = null;
+        let pendingModConfig = null;
+        let selectedModOption = null;
+        let sheetItemUid = null;
+
+        const LS_KEY = 'waiter_state_v2';
+        const $ = id => document.getElementById(id);
+        const activeTable = () => state.tables.find(t => t.id === activeTableId);
+        const isOpen = id => !$(id).classList.contains('hidden');
+        // Открывается окно — старое уведомление убираем, чтобы оно не легло поверх его кнопок
+        const show = id => { $(id).classList.remove('hidden'); if (/Modal$|Sheet$/.test(id)) hideToast(); };
+        const hide = id => $(id).classList.add('hidden');
+        const newUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+        function freshTable(def) {
+            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [] };
+        }
+
+        /** Чинит данные из любой версии: недостающие поля, новые столы из схемы по умолчанию. */
+        function normalizeState(raw) {
+            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [] };
+            s.removed = Array.isArray(raw?.removed) ? raw.removed.filter(x => typeof x === 'string') : [];
+            s.stop = Array.isArray(raw?.stop) ? [...new Set(raw.stop.filter(x => typeof x === 'string' && x.trim()))] : [];
+            const src = Array.isArray(raw?.tables) ? raw.tables : [];
+            src.forEach(t => {
+                if (!t || typeof t.id !== 'string') return;
+                s.tables.push({
+                    id: t.id, label: String(t.label ?? '?'),
+                    x: Number.isFinite(t.x) ? t.x : 50, y: Number.isFinite(t.y) ? t.y : 50,
+                    guestCount: Math.max(0, parseInt(t.guestCount) || 0),
+                    activeGuest: Math.max(1, parseInt(t.activeGuest) || 1),
+                    posSynced: !!t.posSynced,
+                    openedAt: Number(t.openedAt) || 0,
+                    items: Array.isArray(t.items) ? t.items.filter(i => i && i.name).map(i => ({
+                        uid: String(i.uid || newUid()), name: String(i.name), group: i.group === 'bar' ? 'bar' : 'kitchen',
+                        guest: Math.max(1, parseInt(i.guest) || 1), qty: Math.max(1, parseInt(i.qty) || 1),
+                        option: String(i.option || ''), note: String(i.note || '')
+                    })) : []
+                });
+            });
+            DEFAULT_TABLES.forEach(d => {
+                if (!s.tables.some(t => t.id === d.id) && !s.removed.includes(d.id)) s.tables.push(freshTable(d));
+            });
+            s.tables.forEach(t => {
+                const maxGuest = t.items.reduce((m, i) => Math.max(m, i.guest), 0);
+                if (t.guestCount < maxGuest) t.guestCount = maxGuest;
+                if (t.items.length && !t.openedAt) t.openedAt = Date.now();
+            });
+            return s;
+        }
+
+        function loadLocal() {
+            let raw = null;
+            try {
+                const v2 = localStorage.getItem(LS_KEY);
+                if (v2) raw = JSON.parse(v2);
+                let nativeRaw = null;
+                try { const n = Native && Native.loadState(); if (n) nativeRaw = JSON.parse(n); } catch (e) {}
+                if (nativeRaw && (!raw || (Number(nativeRaw.ts) || 0) > (Number(raw.ts) || 0))) raw = nativeRaw;
+                if (!raw) {
+                    // Перенос из первой версии
+                    const t = JSON.parse(localStorage.getItem('waiter_orders_v1') || 'null');
+                    const st = JSON.parse(localStorage.getItem('waiter_stoplist_v1') || 'null');
+                    if (t || st) raw = { ts: Date.now(), tables: Array.isArray(t) ? t : [], stop: Array.isArray(st) ? st : [] };
+                }
+            } catch (e) { raw = null; }
+            applyState(normalizeState(raw));
+        }
+
+        function applyState(s) {
+            state = s;
+            stopSet = new Set(state.stop);
+        }
+
+        function saveState() {
+            state.ts = Date.now();
+            stopSet = new Set(state.stop);
+            const json = JSON.stringify(state);
+            try { localStorage.setItem(LS_KEY, json); } catch (e) {}
+            // Копия в памяти приложения: сохраняется сразу, даже если Android закроет приложение через секунду
+            try { Native && Native.saveState(json); } catch (e) {}
+        }
+
+        function snapshot() { return JSON.stringify({ tables: state.tables, stop: state.stop, removed: state.removed }); }
+        function restoreSnapshot(snap) {
+            const d = JSON.parse(snap);
+            applyState(normalizeState({ ...d, ts: Date.now() }));
+            saveState();
+            rerenderAll();
+        }
+
+        // ==========================================
+        // УВЕДОМЛЕНИЕ С КНОПКОЙ «ОТМЕНИТЬ»
+        // ==========================================
+        let toastTimer = null;
+        function showToast(msg, action) {
+            const toast = $('toast');
+            $('toastText').textContent = msg;
+            const btn = $('toastAction');
+            if (action) {
+                btn.textContent = action.label;
+                btn.classList.remove('hidden');
+                btn.onclick = () => { hideToast(); action.fn(); };
+                toast.classList.remove('pointer-events-none');
+            } else {
+                btn.classList.add('hidden');
+                btn.onclick = null;
+                toast.classList.add('pointer-events-none');
+            }
+            // Открыто нижнее окно — уведомление сверху, чтобы не закрывать его кнопки; иначе над нижней панелью
+            const sheetOpen = ['modifierModal', 'itemSheet', 'stopListModal', 'guestCountModal', 'renameModal', 'confirmModal'].some(isOpen);
+            if (sheetOpen) {
+                toast.style.top = 'calc(env(safe-area-inset-top) + 64px)';
+                toast.style.bottom = 'auto';
+            } else {
+                toast.style.top = 'auto';
+                toast.style.bottom = `calc(${isOpen('orderScreen') ? 76 : 64}px + env(safe-area-inset-bottom))`;
+            }
+            toast.classList.remove('opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(hideToast, action ? 4500 : 1800);
+        }
+        function hideToast() {
+            $('toast').classList.add('opacity-0', 'pointer-events-none');
+            clearTimeout(toastTimer);
+        }
+
+        function vibrate(ms) {
+            try { if (Native) Native.vibrate(ms); else if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+        }
+
+        // ==========================================
+        // КАРТА СТОЛОВ
+        // ==========================================
+        function tableItemCount(t) { return t.items.reduce((a, i) => a + i.qty, 0); }
+        function tableHasOrder(t) { return t.items.length > 0 || t.guestCount > 0; }
+
+        function elapsedLabel(since) {
+            if (!since) return '';
+            const m = Math.max(0, Math.floor((Date.now() - since) / 60000));
+            if (m < 1) return 'сейчас';
+            if (m < 60) return `${m}м`;
+            return `${Math.floor(m / 60)}ч${String(m % 60).padStart(2, '0')}`;
+        }
+
+        function renderMap() {
+            const container = $('tablesContainer');
+            container.innerHTML = '';
+            let activeCount = 0;
+
+            state.tables.forEach(table => {
+                const total = tableItemCount(table);
+                const hasOrder = tableHasOrder(table);
+                if (hasOrder) activeCount++;
+
+                const el = document.createElement('div');
+                el.style.left = `${table.x}%`;
+                el.style.top = `${table.y}%`;
+                el.style.transform = 'translate(-50%, -50%)';
+
+                let cls = 'table-node absolute w-[16%] min-w-[54px] max-w-[78px] aspect-[4/4.4] rounded-2xl flex flex-col items-center justify-center cursor-pointer border-2 shadow-lg ';
+                if (isEditMode) cls += 'bg-indigo-950/90 border-indigo-400 text-white cursor-move ring-2 ring-indigo-500/30';
+                else if (hasOrder && !table.posSynced) cls += 'bg-amber-500/20 border-amber-400 text-white';
+                else if (hasOrder) cls += 'bg-emerald-500/20 border-emerald-400 text-white';
+                else cls += 'bg-slate-800/85 border-slate-700/90 text-slate-200';
+                el.className = cls;
+
+                let badge = '';
+                if (total > 0 && !isEditMode) {
+                    const color = table.posSynced ? 'bg-emerald-500' : 'bg-amber-500';
+                    badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${color} text-slate-950 font-extrabold text-[11px] flex items-center justify-center shadow">${total}</div>`;
+                }
+                let sub = '';
+                if (isEditMode) sub = `<span class="text-[9px] text-indigo-300 mt-0.5">✥</span>`;
+                else if (hasOrder) {
+                    const time = elapsedLabel(table.openedAt);
+                    sub = `<span class="text-[9px] font-semibold mt-0.5 ${table.posSynced ? 'text-emerald-300' : 'text-amber-300'}">👤${table.guestCount || 1}${time ? ' · ' + time : ''}</span>`;
+                } else if (table.label === '?') sub = `<span class="text-[9px] text-slate-400 mt-0.5">новый</span>`;
+
+                el.innerHTML = `${badge}<span class="font-extrabold text-base sm:text-lg leading-none max-w-full px-1 truncate">${esc(table.label)}</span>${sub}`;
+                bindTableNode(el, table);
+                container.appendChild(el);
+            });
+
+            $('activeOrdersCount').textContent = `Активных столов: ${activeCount}`;
+            $('headerSubtitle').textContent = isEditMode ? 'Редактирование схемы'
+                : activeCount > 0 ? `В работе столов: ${activeCount}` : 'Нажми на стол, чтобы принять заказ';
+        }
+
+        function bindTableNode(el, table) {
+            let drag = null;
+            let draggedAt = 0;
+            el.addEventListener('pointerdown', e => {
+                if (!isEditMode || (e.pointerType === 'mouse' && e.button !== 0)) return;
+                e.preventDefault();
+                try { el.setPointerCapture(e.pointerId); } catch (err) {}
+                drag = { sx: e.clientX, sy: e.clientY, ox: table.x, oy: table.y, moved: false };
+                el.style.zIndex = 30;
+            });
+            el.addEventListener('pointermove', e => {
+                if (!drag) return;
+                const rect = $('floorMap').getBoundingClientRect();
+                const ddx = e.clientX - drag.sx, ddy = e.clientY - drag.sy;
+                if (!drag.moved && Math.hypot(ddx, ddy) < 6) return;
+                drag.moved = true;
+                const dx = (ddx / rect.width) * 100;
+                const dy = (ddy / rect.height) * 100;
+                const STEP = 5;
+                table.x = Math.max(8, Math.min(92, Math.round((drag.ox + dx) / STEP) * STEP));
+                table.y = Math.max(8, Math.min(92, Math.round((drag.oy + dy) / STEP) * STEP));
+                el.style.left = `${table.x}%`;
+                el.style.top = `${table.y}%`;
+            });
+            const end = () => {
+                if (!drag) return;
+                if (drag.moved) { draggedAt = Date.now(); saveState(); }
+                drag = null;
+                el.style.zIndex = '';
+            };
+            el.addEventListener('pointerup', end);
+            el.addEventListener('pointercancel', end);
+            el.addEventListener('click', () => {
+                if (Date.now() - draggedAt < 400) return;
+                handleTableClick(table.id);
+            });
+        }
+
+        function toggleEditMode() {
+            isEditMode = !isEditMode;
+            $('editModeBtn').className = isEditMode
+                ? 'h-10 w-10 rounded-xl bg-indigo-600 text-white border border-indigo-400 transition flex items-center justify-center'
+                : 'h-10 w-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center justify-center';
+            $('editBanner').classList.toggle('hidden', !isEditMode);
+            $('floorMap').classList.toggle('editor-grid', isEditMode);
+            if (!isEditMode) showToast('Схема сохранена');
+            renderMap();
+        }
+
+        function addTable() {
+            const id = 't_' + newUid();
+            state.tables.push(freshTable({ id, label: '?', x: 50, y: 50 }));
+            saveState();
+            renderMap();
+            activeTableId = id;
+            openRenameModal();
+        }
+
+        function resetLayoutConfirm() {
+            openConfirmModal('Сбросить схему?', 'Столы по умолчанию вернутся на исходные места. Заказы останутся.', () => {
+                const snap = snapshot();
+                state.removed = [];
+                state.tables = state.tables.map(t => {
+                    const def = DEFAULT_TABLES.find(d => d.id === t.id);
+                    return def ? { ...t, x: def.x, y: def.y } : t;
+                });
+                applyState(normalizeState(state));
+                saveState();
+                renderMap();
+                showToast('Схема сброшена', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            });
+        }
+
+        // ==========================================
+        // ВЫБОР СТОЛА И ГОСТЕЙ
+        // ==========================================
+        function handleTableClick(tableId) {
+            const table = state.tables.find(t => t.id === tableId);
+            if (!table) return;
+            if (isEditMode) {
+                activeTableId = tableId;
+                openRenameModal();
+                return;
+            }
+            if (!tableHasOrder(table)) {
+                pendingGuestTableId = tableId;
+                guestModalMode = 'new';
+                $('guestModalBadge').textContent = table.label;
+                $('guestModalHint').textContent = 'Чтобы удобно разделить заказ по гостям';
+                show('guestCountModal');
+            } else {
+                openOrderScreen(tableId);
+            }
+        }
+
+        function openGuestCountEdit() {
+            const table = activeTable();
+            if (!table) return;
+            pendingGuestTableId = table.id;
+            guestModalMode = 'edit';
+            $('guestModalBadge').textContent = table.label;
+            $('guestModalHint').textContent = `Сейчас: ${table.guestCount}. Больше 8 — кнопкой «+ Гость»`;
+            show('guestCountModal');
+        }
+
+        function closeGuestCountModal() {
+            hide('guestCountModal');
+            pendingGuestTableId = null;
+        }
+
+        function confirmGuestCount(count) {
+            const table = state.tables.find(t => t.id === pendingGuestTableId);
+            if (!table) return;
+            if (guestModalMode === 'edit') {
+                const busy = table.items.reduce((m, i) => Math.max(m, i.guest), 0);
+                if (count < busy) {
+                    showToast(`У гостя ${busy} есть блюда — сначала перенеси их`);
+                    return;
+                }
+                table.guestCount = count;
+                if (typeof currentGuestTab === 'number' && currentGuestTab > count) currentGuestTab = count;
+                table.activeGuest = Math.min(table.activeGuest, count);
+                saveState();
+                closeGuestCountModal();
+                renderOrderScreen();
+                return;
+            }
+            table.guestCount = count;
+            table.activeGuest = 1;
+            table.posSynced = false;
+            table.openedAt = Date.now();
+            saveState();
+            closeGuestCountModal();
+            renderMap();
+            openOrderScreen(table.id);
+        }
+
+        // ==========================================
+        // ЭКРАН ЗАКАЗА
+        // ==========================================
+        function openOrderScreen(tableId) {
+            activeTableId = tableId;
+            const table = activeTable();
+            if (!table) return;
+            if (table.guestCount < 1) table.guestCount = 1;
+            currentGuestTab = Math.min(table.activeGuest || 1, table.guestCount);
+            searchQuery = '';
+            $('menuSearchInput').value = '';
+            hide('clearSearchBtn');
+            renderGroupSwitch();
+            renderOrderScreen();
+            show('orderScreen');
+            $('menuItemsList').scrollTop = 0;
+        }
+
+        function closeOrderScreen() {
+            hide('orderScreen');
+            activeTableId = null;
+            renderMap();
+        }
+
+        function renderOrderScreen() {
+            const table = activeTable();
+            if (!table) return;
+            $('orderTableBadge').textContent = table.label;
+            $('orderTableTitle').innerHTML = `${esc(table.label === '?' ? 'Новый столик' : 'Стол №' + table.label)} <span class="text-slate-500">✎</span>`;
+            $('orderGuestsSubtitle').textContent = `Гостей: ${table.guestCount} ✎`;
+            renderGuestTabs(table);
+            renderCurrentOrderBox(table);
+            renderCategoriesBar();
+            renderMenuItemsList();
+            renderPosSyncButton(table);
+        }
+
+        function renderGuestTabs(table) {
+            const container = $('guestTabsContainer');
+            container.innerHTML = '';
+            for (let g = 1; g <= table.guestCount; g++) {
+                const count = table.items.filter(i => i.guest === g).reduce((s, i) => s + i.qty, 0);
+                const active = currentGuestTab === g;
+                const btn = document.createElement('button');
+                btn.className = active
+                    ? 'h-9 px-3 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-xs shrink-0 shadow flex items-center gap-1.5 transition'
+                    : 'h-9 px-3 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs shrink-0 flex items-center gap-1.5 transition';
+                const badge = count > 0 ? `<span class="px-1.5 py-px rounded-full text-[10px] font-extrabold ${active ? 'bg-slate-950 text-emerald-400' : 'bg-slate-700 text-white'}">${count}</span>` : '';
+                btn.innerHTML = `<span>Гость ${g}</span>${badge}`;
+                btn.onclick = () => selectGuestTab(g);
+                container.appendChild(btn);
+            }
+            const total = tableItemCount(table);
+            const allBtn = $('tabAllGuests');
+            allBtn.textContent = total > 0 ? `Весь стол (${total})` : 'Весь стол';
+            allBtn.className = currentGuestTab === 'all'
+                ? 'ml-auto h-9 px-3 rounded-xl bg-amber-500 text-slate-950 text-xs font-extrabold shrink-0 transition'
+                : 'ml-auto h-9 px-3 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold shrink-0 transition';
+        }
+
+        function selectGuestTab(tab) {
+            const table = activeTable();
+            if (!table) return;
+            currentGuestTab = tab;
+            if (typeof tab === 'number') { table.activeGuest = tab; saveState(); }
+            renderGuestTabs(table);
+            renderCurrentOrderBox(table);
+            updateModConfirm();
+        }
+
+        function addGuestToTable() {
+            const table = activeTable();
+            if (!table) return;
+            table.guestCount += 1;
+            currentGuestTab = table.guestCount;
+            table.activeGuest = currentGuestTab;
+            saveState();
+            renderOrderScreen();
+            showToast(`Добавлен Гость ${table.guestCount}`);
+        }
+
+        function renderCurrentOrderBox(table) {
+            const box = $('currentOrderBox');
+            box.innerHTML = '';
+            if (currentGuestTab === 'all') {
+                if (table.items.length === 0) {
+                    box.innerHTML = `<div class="text-center py-3 text-xs text-slate-500">Заказ по столу пока пуст</div>`;
+                    return;
+                }
+                for (let g = 1; g <= table.guestCount; g++) {
+                    const items = table.items.filter(i => i.guest === g);
+                    if (!items.length) continue;
+                    const section = document.createElement('div');
+                    section.className = 'mb-2 last:mb-0';
+                    section.innerHTML = `<div class="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider mb-1">👤 Гость ${g}</div>`;
+                    items.forEach(item => section.appendChild(createOrderLineElement(table, item)));
+                    box.appendChild(section);
+                }
+                return;
+            }
+            const items = table.items.filter(i => i.guest === currentGuestTab);
+            if (!items.length) {
+                box.innerHTML = `<div class="text-center py-2.5 text-xs text-slate-500">Гость ${currentGuestTab}: выбери блюда из меню ниже 👇</div>`;
+                return;
+            }
+            items.forEach(item => box.appendChild(createOrderLineElement(table, item)));
+        }
+
+        function createOrderLineElement(table, item) {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between gap-2 py-1.5 pl-2.5 pr-1.5 mb-1 rounded-xl bg-slate-800/90 border border-slate-700/70';
+            const badges = [];
+            if (item.option) badges.push(`<span class="inline-block bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-md">${esc(item.option)}</span>`);
+            if (item.note) badges.push(`<span class="inline-block bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-1.5 py-0.5 rounded-md">💬 ${esc(item.note)}</span>`);
+            const stopped = stopSet.has(item.name);
+            row.innerHTML = `
+                <button class="line-open flex-1 min-w-0 text-left py-0.5">
+                    <div class="text-xs font-bold ${stopped ? 'text-rose-300' : 'text-white'} leading-tight">${esc(item.name)}${stopped ? ' <span class="text-[10px] text-rose-400">· на стопе</span>' : ''}</div>
+                    ${badges.length ? `<div class="flex flex-wrap gap-1 mt-1">${badges.join('')}</div>` : ''}
+                </button>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button class="btn-dec w-9 h-9 rounded-lg bg-slate-700 active:bg-slate-600 text-white font-bold text-base flex items-center justify-center" aria-label="Меньше">−</button>
+                    <span class="w-6 text-center text-sm font-extrabold text-white">${item.qty}</span>
+                    <button class="btn-inc w-9 h-9 rounded-lg bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-base flex items-center justify-center" aria-label="Больше">+</button>
+                </div>`;
+            row.querySelector('.line-open').onclick = () => openItemSheet(item.uid);
+            row.querySelector('.btn-dec').onclick = () => {
+                if (item.qty > 1) {
+                    item.qty -= 1;
+                } else {
+                    const snap = snapshot();
+                    table.items = table.items.filter(x => x.uid !== item.uid);
+                    showToast(`Убрано: ${item.name}`, { label: 'Вернуть', fn: () => restoreSnapshot(snap) });
+                }
+                table.posSynced = false;
+                saveState();
+                renderOrderScreen();
+            };
+            row.querySelector('.btn-inc').onclick = () => {
+                item.qty += 1;
+                table.posSynced = false;
+                saveState();
+                renderOrderScreen();
+            };
+            return row;
+        }
+
+        // ==========================================
+        // ПОЗИЦИЯ В ЗАКАЗЕ: перенести к другому гостю, примечание, удалить
+        // ==========================================
+        function openItemSheet(uid) {
+            const table = activeTable();
+            const item = table?.items.find(i => i.uid === uid);
+            if (!item) return;
+            sheetItemUid = uid;
+            $('itemSheetName').textContent = item.qty > 1 ? `${item.name} × ${item.qty}` : item.name;
+            $('itemSheetOption').textContent = item.option || '';
+            $('itemSheetNote').value = item.note || '';
+            renderItemSheetGuests(table, item);
+            show('itemSheet');
+        }
+
+        function renderItemSheetGuests(table, item) {
+            const wrap = $('itemSheetGuests');
+            wrap.innerHTML = '';
+            for (let g = 1; g <= table.guestCount; g++) {
+                const btn = document.createElement('button');
+                const active = item.guest === g;
+                btn.className = active
+                    ? 'h-10 px-3.5 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-xs'
+                    : 'h-10 px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-xs';
+                btn.textContent = `Гость ${g}`;
+                btn.onclick = () => {
+                    if (item.guest === g) return;
+                    item.guest = g;
+                    const merged = mergeDuplicate(table, item);
+                    sheetItemUid = merged.uid;
+                    saveState();
+                    renderOrderScreen();
+                    renderItemSheetGuests(table, merged);
+                    showToast(`Перенесено гостю ${g}`);
+                };
+                wrap.appendChild(btn);
+            }
+        }
+
+        /** Если у гостя уже есть такая же позиция (с той же опцией и примечанием) — складывает количество. */
+        function mergeDuplicate(table, item) {
+            const twin = table.items.find(x => x !== item && x.guest === item.guest && x.name === item.name && x.option === item.option && x.note === item.note);
+            if (!twin) return item;
+            twin.qty += item.qty;
+            table.items = table.items.filter(x => x !== item);
+            return twin;
+        }
+
+        function closeItemSheet() {
+            hide('itemSheet');
+            sheetItemUid = null;
+        }
+
+        function saveItemSheet() {
+            const table = activeTable();
+            const item = table?.items.find(i => i.uid === sheetItemUid);
+            if (item) {
+                const note = $('itemSheetNote').value.trim();
+                if (note !== item.note) {
+                    item.note = note;
+                    mergeDuplicate(table, item);
+                    table.posSynced = false;
+                    saveState();
+                    renderOrderScreen();
+                }
+            }
+            closeItemSheet();
+        }
+
+        function deleteItemFromSheet() {
+            const table = activeTable();
+            const item = table?.items.find(i => i.uid === sheetItemUid);
+            if (item) {
+                const snap = snapshot();
+                table.items = table.items.filter(x => x !== item);
+                table.posSynced = false;
+                saveState();
+                renderOrderScreen();
+                showToast(`Удалено: ${item.name}`, { label: 'Вернуть', fn: () => restoreSnapshot(snap) });
+            }
+            closeItemSheet();
+        }
+
+        // ==========================================
+        // МЕНЮ: группы, категории, поиск
+        // ==========================================
+        function renderGroupSwitch() {
+            const on = 'px-3 rounded-lg text-xs font-bold text-slate-950 transition';
+            const off = 'px-3 rounded-lg text-xs font-bold text-slate-400 transition';
+            $('btnGroupKitchen').className = currentMenuGroup === 'kitchen' ? on + ' bg-emerald-500' : off;
+            $('btnGroupBar').className = currentMenuGroup === 'bar' ? on + ' bg-sky-500' : off;
+        }
+
+        function switchMenuGroup(group) {
+            if (searchQuery) clearMenuSearch(true);
+            currentMenuGroup = group;
+            const first = MENU_CATEGORIES.find(c => c.group === group);
+            if (first) currentCategoryId = first.id;
+            renderGroupSwitch();
+            renderCategoriesBar();
+            renderMenuItemsList();
+            $('menuItemsList').scrollTop = 0;
+        }
+
+        function renderCategoriesBar() {
+            const bar = $('categoriesBar');
+            bar.innerHTML = '';
+            if (searchQuery.trim()) {
+                bar.innerHTML = `<span class="text-[11px] text-emerald-400 font-semibold py-1.5">Поиск по всему меню</span>`;
+                return;
+            }
+            MENU_CATEGORIES.filter(c => c.group === currentMenuGroup).forEach(cat => {
+                const active = cat.id === currentCategoryId;
+                const stopped = cat.items.filter(i => stopSet.has(i.name)).length;
+                const btn = document.createElement('button');
+                btn.className = active
+                    ? 'h-8 px-3 rounded-xl bg-slate-200 text-slate-950 font-extrabold text-xs shrink-0 transition'
+                    : 'h-8 px-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 font-semibold text-xs shrink-0 transition';
+                btn.innerHTML = `${esc(cat.title)}${stopped ? ` <span class="text-rose-400">·${stopped}</span>` : ''}`;
+                btn.onclick = () => {
+                    currentCategoryId = cat.id;
+                    renderCategoriesBar();
+                    renderMenuItemsList();
+                    $('menuItemsList').scrollTop = 0;
+                    btn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+                };
+                bar.appendChild(btn);
+                if (active) requestAnimationFrame(() => btn.scrollIntoView({ inline: 'nearest', block: 'nearest' }));
+            });
+        }
+
+        function onSearchMenu(val) {
+            searchQuery = val;
+            $('clearSearchBtn').classList.toggle('hidden', !val.trim());
+            renderCategoriesBar();
+            renderMenuItemsList();
+            $('menuItemsList').scrollTop = 0;
+        }
+
+        function clearMenuSearch(silent) {
+            searchQuery = '';
+            $('menuSearchInput').value = '';
+            hide('clearSearchBtn');
+            if (silent === true) return;
+            renderCategoriesBar();
+            renderMenuItemsList();
+        }
+
+        function searchMenu(query) {
+            const words = fold(query).split(' ').filter(Boolean);
+            if (!words.length) return [];
+            const scored = [];
+            ALL_ITEMS.forEach(item => {
+                let score = 0;
+                for (const w of words) {
+                    const tw = translit(w);
+                    if (item.fold.split(' ').some(x => x.startsWith(w))) score += 3;
+                    else if (item.fold.includes(w)) score += 2;
+                    else if (item.tr.includes(tw)) score += 1;
+                    else if (item.catFold.includes(w)) score += 0.5;
+                    else return;
+                }
+                if (item.fold.startsWith(words[0])) score += 2;
+                scored.push({ item, score });
+            });
+            return scored.sort((a, b) => b.score - a.score).map(s => s.item);
+        }
+
+        function renderMenuItemsList() {
+            const container = $('menuItemsList');
+            container.innerHTML = '';
+            const searching = !!searchQuery.trim();
+            const items = searching ? searchMenu(searchQuery) : (MENU_CATEGORIES.find(c => c.id === currentCategoryId)?.items || []);
+
+            if (!items.length) {
+                container.innerHTML = `<div class="text-center py-8 text-xs text-slate-500">Ничего не найдено</div>`;
+                return;
+            }
+            const guestLabel = typeof currentGuestTab === 'number' ? currentGuestTab : 1;
+
+            items.forEach(item => {
+                const stopped = stopSet.has(item.name);
+                const card = document.createElement('div');
+                card.className = stopped
+                    ? 'press is-stopped p-3 rounded-2xl bg-slate-900/40 border border-rose-500/30 flex items-center justify-between gap-2 cursor-pointer'
+                    : 'press p-3 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-2 active:scale-[0.99] transition cursor-pointer';
+
+                let hint = '';
+                if (stopped) hint = `<span class="text-[10px] text-rose-400 font-extrabold">🚫 НА СТОПЕ · зажми, чтобы вернуть</span>`;
+                else if (item.mod && MOD_HINTS[item.mod]) hint = `<span class="text-[10px] ${MOD_HINTS[item.mod][0]} font-semibold">${MOD_HINTS[item.mod][1]}</span>`;
+
+                card.innerHTML = `
+                    <div class="flex-1 min-w-0 ${stopped ? 'opacity-60' : ''}">
+                        <div class="font-bold text-sm ${stopped ? 'line-through text-slate-400' : 'text-slate-100'} leading-snug">${esc(item.name)}</div>
+                        <div class="flex flex-wrap items-center gap-x-2 mt-0.5">
+                            ${searching ? `<span class="text-[10px] text-slate-500">${esc(item.catTitle)}</span>` : ''}
+                            ${hint}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        ${stopped
+                            ? `<span class="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 font-extrabold text-[10px]">СТОП</span>`
+                            : `<button class="btn-note w-10 h-10 rounded-xl bg-slate-800 text-slate-400 text-sm flex items-center justify-center border border-slate-700" aria-label="Добавить с примечанием">💬</button>
+                               <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-extrabold text-lg flex items-center justify-center">+</div>`}
+                    </div>`;
+
+                bindPress(card, {
+                    onTap: e => {
+                        if (stopped) {
+                            showToast(`«${item.name}» на стопе`, { label: 'Вернуть', fn: () => setItemStopped(item.name, false) });
+                            return;
+                        }
+                        if (e.target.closest('.btn-note')) { openModifierModal(item, true); return; }
+                        if (item.mod) openModifierModal(item, false);
+                        else addItemToGuest(item, '', '');
+                    },
+                    onLong: () => setItemStopped(item.name, !stopped, true)
+                });
+                container.appendChild(card);
+            });
+
+            const tip = document.createElement('div');
+            tip.className = 'text-center text-[11px] text-slate-600 pt-2 pb-1';
+            tip.textContent = `Добавляется гостю ${guestLabel} · зажми позицию, чтобы поставить на стоп`;
+            container.appendChild(tip);
+        }
+
+        /** Касание и долгое нажатие на одном элементе. Прокрутка списка нажатие отменяет. */
+        function bindPress(el, { onTap, onLong }) {
+            // downSeen: касание началось именно на этом элементе. После долгого нажатия список перерисовывается,
+            // и отпущенный палец не должен «нажать» новую карточку, которая оказалась на том же месте
+            let timer = null, sx = 0, sy = 0, longFired = false, downSeen = false;
+            const cancel = () => { clearTimeout(timer); timer = null; el.classList.remove('pressing'); };
+            el.addEventListener('pointerdown', e => {
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                longFired = false;
+                downSeen = true;
+                sx = e.clientX; sy = e.clientY;
+                el.classList.add('pressing');
+                timer = setTimeout(() => {
+                    timer = null;
+                    longFired = true;
+                    el.classList.remove('pressing');
+                    vibrate(30);
+                    onLong();
+                }, 500);
+            });
+            el.addEventListener('pointermove', e => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); });
+            el.addEventListener('pointerup', cancel);
+            el.addEventListener('pointercancel', cancel);
+            el.addEventListener('pointerleave', cancel);
+            el.addEventListener('contextmenu', e => e.preventDefault());
+            el.addEventListener('click', e => {
+                if (!downSeen || longFired) { longFired = false; downSeen = false; e.preventDefault(); e.stopPropagation(); return; }
+                downSeen = false;
+                onTap(e);
+            });
+        }
+
+        function setItemStopped(name, stopped, fromPress) {
+            const snap = snapshot();
+            if (stopped) { if (!state.stop.includes(name)) state.stop.push(name); }
+            else state.stop = state.stop.filter(x => x !== name);
+            saveState();
+            rerenderAll();
+            if (fromPress || stopped) {
+                showToast(stopped ? `🚫 На стопе: ${name}` : `✓ Снова в меню: ${name}`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            } else {
+                showToast(`✓ Снова в меню: ${name}`);
+            }
+        }
+
+        // ==========================================
+        // ОПЦИИ И ПРИМЕЧАНИЕ
+        // ==========================================
+        const stemWords = s => fold(s).split(' ').filter(w => w.length >= 3);
+
+        /** Закрыт ли вариант опции стоп-листом: «Американо» на стопе → «Овсяная + Американо» недоступна. */
+        function optionBlockedBy(opt) {
+            const ow = stemWords(opt);
+            const hit = pattern => {
+                const pw = stemWords(pattern);
+                return pw.length > 0 && pw.every(w => {
+                    const p = w.slice(0, Math.min(5, w.length));
+                    return ow.some(o => o.startsWith(p) || (o.length >= 4 && w.startsWith(o)));
+                });
+            };
+            for (const entry of state.stop) {
+                if (hit(entry)) return entry;
+                if ((OPTION_ALIASES[entry] || []).some(hit)) return entry;
+            }
+            return null;
+        }
+
+        function openModifierModal(item, noteMode) {
+            pendingModItem = item;
+            selectedModOption = null;
+            pendingModConfig = item.mod ? MODIFIER_CONFIGS[item.mod] : null;
+            const config = pendingModConfig;
+            $('modItemName').textContent = item.name;
+            $('modCustomNote').value = '';
+            const grid = $('modOptionsGrid');
+            grid.innerHTML = '';
+
+            if (config) {
+                $('modCategoryTag').textContent = 'Обязательный выбор';
+                $('modPromptLabel').textContent = config.prompt;
+                show('modPromptLabel');
+                show('modOptionsGrid');
+                let available = 0;
+                config.options.forEach(opt => {
+                    const blocked = optionBlockedBy(opt);
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.dataset.opt = opt;
+                    btn.disabled = !!blocked;
+                    btn.className = blocked
+                        ? 'mod-opt-btn p-3 rounded-2xl border border-rose-500/30 bg-slate-900 text-left font-bold text-sm text-slate-500 flex items-center justify-between'
+                        : 'mod-opt-btn p-3 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between';
+                    btn.innerHTML = blocked
+                        ? `<span class="line-through">${esc(opt)}</span><span class="text-[10px] text-rose-400 font-extrabold no-underline">СТОП</span>`
+                        : `<span>${esc(opt)}</span><span class="check-dot w-5 h-5 shrink-0 rounded-full border-2 border-slate-500"></span>`;
+                    if (!blocked) {
+                        available++;
+                        btn.onclick = () => { selectedModOption = opt; paintModOptions(); updateModConfirm(); };
+                    }
+                    grid.appendChild(btn);
+                });
+                if (!available) showToast('Все варианты сейчас на стопе');
+            } else {
+                $('modCategoryTag').textContent = 'Примечание к блюду';
+                hide('modPromptLabel');
+                hide('modOptionsGrid');
+            }
+            updateModConfirm();
+            show('modifierModal');
+            if (noteMode && !config) setTimeout(() => $('modCustomNote').focus(), 120);
+        }
+
+        function paintModOptions() {
+            document.querySelectorAll('#modOptionsGrid .mod-opt-btn:not(:disabled)').forEach(b => {
+                const on = b.dataset.opt === selectedModOption;
+                b.className = on
+                    ? 'mod-opt-btn p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-500/20 text-left font-extrabold text-sm text-white transition flex items-center justify-between'
+                    : 'mod-opt-btn p-3 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between';
+                b.querySelector('.check-dot').className = on
+                    ? 'check-dot w-5 h-5 shrink-0 rounded-full bg-emerald-500 border-2 border-emerald-300'
+                    : 'check-dot w-5 h-5 shrink-0 rounded-full border-2 border-slate-500';
+            });
+        }
+
+        function updateModConfirm() {
+            const btn = $('modConfirmBtn');
+            if (!btn || !pendingModItem) return;
+            const need = !!pendingModConfig && !selectedModOption;
+            const guest = typeof currentGuestTab === 'number' ? currentGuestTab : 1;
+            btn.disabled = need;
+            btn.textContent = need ? 'Выбери вариант' : `Добавить · Гость ${guest}`;
+            btn.className = need
+                ? 'w-full py-3.5 rounded-2xl bg-slate-800 text-slate-500 font-extrabold text-sm transition'
+                : 'w-full py-3.5 rounded-2xl bg-emerald-500 active:bg-emerald-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-emerald-500/20 transition';
+        }
+
+        function closeModifierModal() {
+            hide('modifierModal');
+            pendingModItem = null;
+            pendingModConfig = null;
+            selectedModOption = null;
+        }
+
+        function confirmModifierSelection() {
+            if (!pendingModItem) return;
+            if (pendingModConfig && !selectedModOption) return;
+            const note = $('modCustomNote').value.trim();
+            addItemToGuest(pendingModItem, selectedModOption || '', note);
+            closeModifierModal();
+        }
+
+        function addItemToGuest(item, option, note) {
+            const table = activeTable();
+            if (!table) return;
+            if (typeof currentGuestTab !== 'number') currentGuestTab = 1;
+            const guest = currentGuestTab;
+            table.activeGuest = guest;
+            const existing = table.items.find(x => x.guest === guest && x.name === item.name && x.option === option && x.note === note);
+            if (existing) existing.qty += 1;
+            else table.items.push({ uid: newUid(), name: item.name, group: item.group, guest, qty: 1, option, note });
+            if (!table.openedAt) table.openedAt = Date.now();
+            table.posSynced = false;
+            saveState();
+            renderOrderScreen();
+            vibrate(12);
+            showToast(`+ ${item.name} · Гость ${guest}`);
+        }
+
+        // ==========================================
+        // POS, КОПИРОВАНИЕ, ЗАКРЫТИЕ СТОЛА
+        // ==========================================
+        function renderPosSyncButton(table) {
+            const btn = $('togglePosSyncedBtn');
+            if (!table.items.length) {
+                btn.className = 'flex-1 h-11 px-3 rounded-xl bg-slate-800/50 text-slate-500 font-bold text-xs flex items-center justify-center gap-2 cursor-default';
+                btn.innerHTML = '<span>Заказ пуст</span>';
+            } else if (table.posSynced) {
+                btn.className = 'flex-1 h-11 px-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 transition';
+                btn.innerHTML = '<span>✓ Вбито в POS</span>';
+            } else {
+                btn.className = 'flex-1 h-11 px-3 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition';
+                btn.innerHTML = '<span>Отметить: вбил в POS</span>';
+            }
+        }
+
+        function toggleTablePosSynced() {
+            const table = activeTable();
+            if (!table || !table.items.length) return;
+            table.posSynced = !table.posSynced;
+            saveState();
+            renderPosSyncButton(table);
+            if (table.posSynced) {
+                vibrate(20);
+                showToast('Отмечено: вбито в POS ✓');
+            } else {
+                showToast('Отметка «вбито» снята', { label: 'Вернуть', fn: () => { table.posSynced = true; saveState(); renderPosSyncButton(table); } });
+            }
+        }
+
+        function orderAsText(table) {
+            const title = table.label === '?' ? 'Новый столик' : `Стол ${table.label}`;
+            const lines = [`${title} · гостей: ${table.guestCount}`];
+            for (let g = 1; g <= table.guestCount; g++) {
+                const items = table.items.filter(i => i.guest === g);
+                if (!items.length) continue;
+                lines.push('', `Гость ${g}:`);
+                ['kitchen', 'bar'].forEach(group => items.filter(i => i.group === group).forEach(i => {
+                    const extra = [i.option, i.note && `💬 ${i.note}`].filter(Boolean).join(' · ');
+                    lines.push(`— ${i.name}${i.qty > 1 ? ' ×' + i.qty : ''}${extra ? ' (' + extra + ')' : ''}`);
+                }));
+            }
+            return lines.join('\n');
+        }
+
+        async function copyText(text) {
+            if (Native) { try { Native.copy(text); return true; } catch (e) {} }
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+                document.body.appendChild(ta);
+                ta.select();
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch (err) {}
+                ta.remove();
+                return ok;
+            }
+        }
+
+        async function copyOrder() {
+            const table = activeTable();
+            if (!table) return;
+            if (!table.items.length) { showToast('Заказ пуст'); return; }
+            showToast(await copyText(orderAsText(table)) ? 'Заказ скопирован 📋' : 'Не получилось скопировать');
+        }
+
+        function confirmClearTableOrder() {
+            const table = activeTable();
+            if (!table) return;
+            const close = () => {
+                const snap = snapshot();
+                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [] });
+                saveState();
+                closeOrderScreen();
+                showToast(`Стол ${table.label} закрыт`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            };
+            if (!table.items.length) { close(); return; }
+            const warn = table.posSynced ? 'Все позиции и гости будут очищены.' : '⚠️ Заказ ещё не отмечен как вбитый в POS. Всё равно очистить?';
+            openConfirmModal(`Закрыть стол ${table.label}?`, warn, close);
+        }
+
+        // ==========================================
+        // НОМЕР СТОЛА, УДАЛЕНИЕ, ПОДТВЕРЖДЕНИЕ
+        // ==========================================
+        function openRenameModal() {
+            const table = activeTable();
+            if (!table) return;
+            const input = $('renameInput');
+            input.value = table.label === '?' ? '' : table.label;
+            $('deleteTableBtn').classList.toggle('hidden', !(isEditMode && !tableHasOrder(table)));
+            show('renameModal');
+            setTimeout(() => { input.focus(); input.select(); }, 100);
+        }
+
+        function closeRenameModal() {
+            hide('renameModal');
+            if (isOpen('orderScreen')) return;
+            activeTableId = null;
+        }
+
+        function saveTableName() {
+            const table = activeTable();
+            if (!table) return;
+            const label = $('renameInput').value.trim() || '?';
+            if (label !== '?' && state.tables.some(t => t !== table && t.label.toLowerCase() === label.toLowerCase())) {
+                showToast(`Стол «${label}» уже есть на схеме`);
+                return;
+            }
+            table.label = label;
+            saveState();
+            hide('renameModal');
+            if (isOpen('orderScreen')) renderOrderScreen();
+            else activeTableId = null;
+            renderMap();
+            showToast(`Номер стола: ${label}`);
+        }
+
+        function deleteActiveTable() {
+            const table = activeTable();
+            if (!table || tableHasOrder(table)) return;
+            const snap = snapshot();
+            state.tables = state.tables.filter(t => t !== table);
+            if (DEFAULT_TABLES.some(d => d.id === table.id) && !state.removed.includes(table.id)) state.removed.push(table.id);
+            saveState();
+            closeRenameModal();
+            renderMap();
+            showToast('Стол удалён', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+        }
+
+        function openConfirmModal(title, desc, onConfirm) {
+            $('confirmTitle').textContent = title;
+            $('confirmDesc').textContent = desc;
+            $('confirmActionBtn').onclick = () => { closeConfirmModal(); onConfirm(); };
+            show('confirmModal');
+        }
+        function closeConfirmModal() { hide('confirmModal'); }
+
+        // ==========================================
+        // СТОП-ЛИСТ
+        // ==========================================
+        function updateStopListBadge() {
+            const badge = $('stopListBadge');
+            badge.textContent = state.stop.length;
+            badge.classList.toggle('hidden', !state.stop.length);
+        }
+
+        function openStopListModal() {
+            $('stopListInput').value = '';
+            hide('stopResult');
+            renderActiveStopList();
+            show('stopListModal');
+        }
+        function closeStopListModal() { hide('stopListModal'); }
+
+        async function pasteStopFromClipboard() {
+            try {
+                const text = Native ? Native.paste() : await navigator.clipboard.readText();
+                if (text && text.trim()) {
+                    $('stopListInput').value = text;
+                    return;
+                }
+                showToast('Буфер обмена пуст');
+            } catch (e) {
+                showToast('Зажми поле ввода и выбери «Вставить»');
+                $('stopListInput').focus();
+            }
+        }
+
+        // ==========================================
+        // РАЗБОР СТОП-ЛИСТА (без интернета и ИИ)
+        // Строку из чата приводим к основам слов и ищем позиции меню, в названии которых есть все эти слова.
+        // Понимает падежи («нет кваса»), опечатки в одну букву, транслит («бивина»), бренды по-русски («хайнекен»),
+        // группы («весь разливной», «манты все», «пиво») и списки через запятую.
+        // ==========================================
+        const VOWELS_TAIL = /[аеиоуыэюяйь]$/;
+        /** Основа слова: у русских слов отрезаем конечную гласную («кваса», «квасе» → «квас»). */
+        function stem(word) {
+            if (!/[а-я]/.test(word)) return word.length > 4 ? word.replace(/s$/, '') : word;
+            return word.length > 3 && VOWELS_TAIL.test(word) ? word.slice(0, -1) : word;
+        }
+        // Короткие слова-предлоги не считаем, а «Фо», «Бо», «Га», «Шу» — это названия
+        const SHORT_SKIP = new Set(['на', 'по', 'со', 'из', 'до', 'от', 'за', 'не', 'ни', 'во', 'ко', 'же', 'то', 'уж', 'мл', 'ok', 'ок']);
+        const wordsOf = text => fold(text).split(' ').filter(w => w.length >= 3 || /\d/.test(w) || (w.length === 2 && !SHORT_SKIP.has(w)));
+
+        // Как пишут в чате → слово из названия в меню
+        const WORD_ALIASES = {
+            кола: 'cola', кока: 'coca', колы: 'cola', зеро: 'zero', ориджинал: 'original', оранж: 'orange', сода: 'soda', эль: 'ale', пепси: 'pepsi', спрайт: 'sprite', фанта: 'fanta', швепс: 'schweppes',
+            тоник: 'tonic', содовая: 'soda', аквафина: 'aquafina', перье: 'perrier', вода: 'aquafina',
+            тайгер: 'tiger', тигр: 'tiger', хайнекен: 'heineken', хайнекен0: 'heineken', хайник: 'heineken', сайгон: 'saigon',
+            бивина: 'bivina', корона: 'corona', туборг: 'tuborg', сомерсби: 'somersby', сидр: 'somersby', саппоро: 'sapporo',
+            кроненбург: 'kronenbourg', кроненбур: 'kronenbourg', худа: 'huda', биахой: 'hoi', хой: 'hoi',
+            апероль: 'aperol', кампари: 'campari', мартини: 'martini', малибу: 'malibu', калуа: 'kahlua', бейлис: 'baileys',
+            бейлиз: 'baileys', трипл: 'triple', куантро: 'cointreau', ягер: 'jagermeister', егерь: 'jagermeister',
+            егермейстер: 'jagermeister', ягермейстер: 'jagermeister', франжелико: 'frangelico', франджелико: 'frangelico',
+            смирнов: 'smirnoff', смирнофф: 'smirnoff', абсолют: 'absolut', белуга: 'beluga', грейгус: 'goose', гус: 'goose',
+            бифитер: 'beefeater', бомбей: 'bombay', бакарди: 'bacardi', морган: 'morgan', гавана: 'havana', ольмека: 'olmeca',
+            олмека: 'olmeca', куэрво: 'cuervo', тичерс: 'teachers', джонни: 'johnnie', джони: 'johnnie', уокер: 'walker',
+            бим: 'beam', баллантайнс: 'ballantines', баллантайн: 'ballantines', джеймсон: 'jameson', джемесон: 'jameson',
+            чивас: 'chivas', джек: 'jack', гленфиддик: 'glenfiddich', макаллан: 'macallan', макалан: 'macallan',
+            тамаринд: 'tamarind', негрони: 'negroni', беллини: 'bellini', текила: 'tequila', джин: 'gin', ром: 'rum',
+            виски: 'whiskey', водка: 'vodka', просекко: 'prosecco', асти: 'asti', шардоне: 'chardonnay', совиньон: 'sauvignon',
+            каберне: 'cabernet', пино: 'pinot', гриджио: 'grigio', мионетто: 'mionetto', тавернелло: 'tavernello',
+            далат: 'dalat', эспрессо: 'эспрессо', капучино: 'капучино', крылышки: 'крылья', крылышко: 'крылья',
+            баньми: 'banh', банми: 'banh', инглиш: 'english', бургер: 'бургер', наггетсы: 'наггетсы', пуэр: 'пуэр', апероля: 'aperol'
+        };
+        const ALIAS_BY_STEM = new Map(Object.entries(WORD_ALIASES).map(([k, v]) => [stem(fold(k)), fold(v)]));
+
+        // Одно слово в строке = вся группа меню
+        const CATEGORY_WORDS = {
+            пиво: ['b_35'], пива: ['b_35'], сидр: null, супы: ['k_04'], суп: ['k_04'], кофе: ['b_18_19'], чай: ['b_20_21'],
+            чаи: ['b_20_21'], коктейли: ['b_31_32'], коктейль: ['b_31_32'], вино: ['b_33_34'], вина: ['b_33_34'],
+            игристое: ['b_33_34'], пицца: ['k_14'], пиццы: ['k_14'], паста: ['k_13'], пасты: ['k_13'], салаты: ['k_07'],
+            гарниры: ['k_10'], гарнир: ['k_10'], завтраки: ['k_01_1'], завтрак: ['k_01_1'], сеты: ['k_06'], мангал: ['k_09'],
+            шашлык: ['k_09'], шашлыки: ['k_09'], газировка: ['b_25_26'], лимонады: null, крепкий: ['b_36_42'], алкоголь: ['b_36_42']
+        };
+        const CATEGORY_BY_STEM = new Map(Object.entries(CATEGORY_WORDS).filter(([, v]) => v).map(([k, v]) => [stem(fold(k)), v]));
+
+        // Служебные слова чата: не названия блюд
+        const NOISE_PREFIXES = ['нет', 'нету', 'законч', 'кончил', 'кончает', 'стоп', 'лист', 'стоплист', 'кухн', 'бар', 'спис',
+            'времен', 'отсутств', 'все', 'всё', 'весь', 'вся', 'вид', 'виды', 'любые', 'любой', 'сегодн', 'пока', 'сейчас', 'конц',
+            'вечер', 'позици', 'привет', 'добр', 'утро', 'коллег', 'ребят', 'внимани', 'будет', 'het', 'out', 'stock', 'sold',
+            'обновл', 'актуальн', 'остал', 'осталось', 'мало', 'тоже', 'также', 'уже', 'еще', 'ещё', 'для', 'или', 'без', 'про',
+            'наличи', 'брать', 'продав', 'принима', 'заказыва', 'гост', 'дня', 'день'];
+        const NOISE = NOISE_PREFIXES.map(fold);
+        const isNoise = w => /^\d+$/.test(w) || NOISE.some(p => w === p || (p.length >= 4 && w.startsWith(p)));
+        // «Снова есть», «вернули», ✅ — строка про то, что позиция доступна
+        const RETURNED = /✅|✔|☑|(^|\s)(есть|появил\S*|вернул\S*|снова|можно продавать|сняли со стопа|убрали со стопа|сняты со стопа)(\s|$)/;
+
+        function commonPrefix(a, b) { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; }
+        function lev1(a, b) {
+            // Отличаются не больше чем на одну букву (замена, вставка или пропуск)
+            if (Math.abs(a.length - b.length) > 1) return false;
+            let i = 0, j = 0, diff = 0;
+            while (i < a.length && j < b.length) {
+                if (a[i] === b[j]) { i++; j++; continue; }
+                if (++diff > 1) return false;
+                if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+            }
+            return diff + (a.length - i) + (b.length - j) <= 1;
+        }
+        function tokMatch(a, b) {
+            if (a === b) return true;
+            const m = Math.min(a.length, b.length);
+            if (m >= 4 && (a.startsWith(b) || b.startsWith(a)) && (m >= 5 || Math.abs(a.length - b.length) <= 2)) return true;
+            if (m >= 5 && commonPrefix(a, b) >= Math.max(5, m - 1)) return true;
+            if (m >= 5 && lev1(a, b)) return true;
+            return false;
+        }
+        function makeToken(word) {
+            const s = stem(word);
+            const alias = ALIAS_BY_STEM.get(s);
+            const base = alias ? stem(alias) : s;
+            return { s: base, t: translit(base), raw: word };
+        }
+        const isCyr = w => /[а-я]/.test(w);
+        // Разные алфавиты («бивина» и «Bivina») сравниваем в транслите, но без поправок на опечатки
+        const tokenEq = (x, y) => isCyr(x.s) === isCyr(y.s) ? tokMatch(x.s, y.s)
+            : (x.t === y.t || (Math.min(x.t.length, y.t.length) >= 4 && (x.t.startsWith(y.t) || y.t.startsWith(x.t))));
+
+        const MENU_TOKENS = MENU_NAMES.map(name => ({
+            name, tokens: wordsOf(name).map(makeToken)
+        }));
+        const OPTION_PHRASES = [...new Set(Object.values(MODIFIER_CONFIGS).flatMap(c => c.options))]
+            .map(text => ({ text: text.replace(/[^\p{L}\p{N}\s+()-]/gu, '').trim(), tokens: wordsOf(text).map(makeToken) }));
+
+        /** Одна строка (фрагмент) → позиции меню / продукт / ничего. */
+        function matchFragment(fragment) {
+            const words = wordsOf(fragment).filter(w => !isNoise(w));
+            if (!words.length) return { skip: true };
+            const tokens = words.map(makeToken);
+
+            if (tokens.length === 1 && CATEGORY_BY_STEM.has(stem(words[0]))) {
+                const ids = CATEGORY_BY_STEM.get(stem(words[0]));
+                return { names: [...new Set(MENU_CATEGORIES.filter(c => ids.includes(c.id)).flatMap(c => c.items.map(i => i.name)))], group: true };
+            }
+            // Продукт из вариантов опций: «нет кваса», «сметана закончилась», «кокосовое молоко»
+            const opt = OPTION_PHRASES.find(o => tokens.every(t => o.tokens.some(ot => tokenEq(t, ot))));
+            let extra = null;
+            if (opt) {
+                const label = opt.tokens.length === tokens.length ? opt.text : words.join(' ');
+                extra = label.charAt(0).toUpperCase() + label.slice(1);
+                if (NAME_BY_FOLD.has(fold(extra))) extra = null; // это и так позиция меню («Греча»)
+            }
+            // Все слова строки есть в названии
+            const full = MENU_TOKENS.filter(m => tokens.every(t => m.tokens.some(mt => tokenEq(t, mt))));
+            if (full.length) {
+                // Точное совпадение названия важнее: «Tuborg» — это не «Tuborg Green» и не «Tuborg Ice»
+                const exact = full.filter(m => m.tokens.length === tokens.length);
+                const byGroupWord = full.length > 1 && exact.length === 1 && !/(^|\s)(все|весь|вся|всё|виды)(\s|$)/.test(fold(fragment));
+                return { names: (byGroupWord ? exact : full).map(m => m.name), extra };
+            }
+            if (extra) return { names: [], extra };
+            return { names: [], tokens, words };
+        }
+
+        /** Часть слов совпала: позиции с первым (главным) словом строки, если остальные слова тоже есть в меню. */
+        function partialMatch(tokens) {
+            if (!tokens || tokens.length < 2) return [];
+            const known = tokens.filter(t => MENU_TOKENS.some(m => m.tokens.some(mt => tokenEq(t, mt))));
+            if (known.length !== tokens.length) return [];
+            const head = tokens[0];
+            const scored = MENU_TOKENS.filter(m => m.tokens.some(mt => tokenEq(head, mt)))
+                .map(m => ({ m, n: tokens.filter(t => m.tokens.some(mt => tokenEq(t, mt))).length }));
+            const best = Math.max(0, ...scored.map(x => x.n));
+            return best > 0 ? scored.filter(x => x.n === best).map(x => x.m.name) : [];
+        }
+
+        function localParseStopList(raw) {
+            const items = new Set(), extras = new Set(), unmatched = [], lines = [];
+            const fragments = [];
+            raw.split(/\r?\n/).forEach(line => {
+                const afterColon = line.includes(':') ? line.slice(line.lastIndexOf(':') + 1) : line;
+                afterColon.split(/[,;]/).forEach(f => { if (f.trim()) fragments.push(f.trim()); });
+            });
+            fragments.forEach(fragment => {
+                if (RETURNED.test(fold(fragment)) || RETURNED.test(fragment)) return;
+                let r = matchFragment(fragment);
+                if (r.skip) return;
+                if (!r.extra && !r.names.length) {
+                    // «борщ и солянка», «кола/спрайт» — по частям
+                    const parts = fragment.split(/\s+и\s+|\s*\/\s*|\s+или\s+|\s+\+\s+/).filter(p => p.trim());
+                    const sub = parts.length > 1 ? parts.map(matchFragment).filter(x => !x.skip) : [];
+                    if (sub.length && sub.every(x => x.extra || x.names.length)) {
+                        r = { names: sub.flatMap(x => x.names), extras: sub.map(x => x.extra).filter(Boolean) };
+                    } else {
+                        const names = partialMatch(r.tokens);
+                        if (names.length) r = { names, partial: true };
+                    }
+                }
+                const names = r.names || [];
+                const ex = r.extra ? [r.extra] : (r.extras || []);
+                names.forEach(n => items.add(n));
+                ex.forEach(e => extras.add(e));
+                if (!names.length && !ex.length) unmatched.push(fragment);
+                lines.push({ text: fragment, names, extras: ex, unsure: !!r.partial });
+            });
+            return { items: [...items], extras: [...extras], unmatched, lines };
+        }
+
+        function applyStopListFromText() {
+            const raw = $('stopListInput').value;
+            if (!raw.trim()) { showToast('Вставь текст стоп-листа'); return; }
+            const result = localParseStopList(raw);
+            renderStopResult(result);
+            if (!result.items.length && !result.extras.length) {
+                showToast('Не нашёл в тексте позиций меню');
+                return;
+            }
+            const snap = snapshot();
+            state.stop = [...result.items, ...result.extras];
+            saveState();
+            rerenderAll();
+            $('stopListInput').value = '';
+            showToast(`На стопе: ${state.stop.length}`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+        }
+
+        /** «Как я понял»: каждая строка из чата → что поставлено на стоп. Непонятые строки — сверху. */
+        function renderStopResult(result) {
+            const box = $('stopResult');
+            if (!result.lines.length) { box.innerHTML = ''; hide('stopResult'); return; }
+            const order = l => (!l.names.length && !l.extras.length) ? 0 : l.unsure ? 1 : 2;
+            const rows = [...result.lines].sort((a, b) => order(a) - order(b)).map(l => {
+                const got = [...l.names, ...l.extras];
+                let right;
+                if (!got.length) right = `<span class="text-amber-300 font-bold">не нашёл в меню</span>`;
+                else {
+                    const shown = got.slice(0, 4).map(esc).join(', ');
+                    right = `<span class="text-slate-100">${shown}${got.length > 4 ? ` <span class="text-slate-400">и ещё ${got.length - 4}</span>` : ''}</span>`;
+                    if (l.unsure) right += ` <span class="text-amber-300">· проверь</span>`;
+                }
+                return `<div class="py-1 border-b border-slate-700/60 last:border-0"><div class="text-slate-400">${esc(l.text)}</div><div>→ ${right}</div></div>`;
+            }).join('');
+            const misses = result.unmatched.length;
+            box.innerHTML = `<div class="text-[11px] bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2">
+                <div class="font-bold ${misses ? 'text-amber-300' : 'text-emerald-300'} mb-1">${misses ? `Как я понял · не нашёл: ${misses}` : 'Как я понял'}</div>
+                ${rows}
+                ${misses ? '<div class="text-slate-500 mt-1.5">Если это позиция меню — найди её и зажми, чтобы поставить на стоп.</div>' : ''}
+            </div>`;
+            show('stopResult');
+        }
+
+        function clearStopList() {
+            if (!state.stop.length) return;
+            const snap = snapshot();
+            state.stop = [];
+            saveState();
+            rerenderAll();
+            hide('stopResult');
+            showToast('Стоп-лист очищен', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+        }
+
+        function renderActiveStopList() {
+            const container = $('activeStopListContainer');
+            $('stopListActiveCount').textContent = state.stop.length;
+            $('clearStopBtn').classList.toggle('hidden', !state.stop.length);
+            container.innerHTML = '';
+            if (!state.stop.length) {
+                container.innerHTML = `<div class="text-center py-4 text-xs text-slate-500">Стоп-лист пуст — доступно всё меню</div>`;
+                return;
+            }
+            const menuSet = new Set(MENU_NAMES);
+            const sorted = [...state.stop].sort((a, b) => (menuSet.has(b) - menuSet.has(a)) || a.localeCompare(b, 'ru'));
+            sorted.forEach(name => {
+                const isExtra = !menuSet.has(name);
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-2 pl-3 pr-1.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/25';
+                row.innerHTML = `
+                    <span class="text-xs font-semibold text-rose-200 min-w-0">❌ ${esc(name)}${isExtra ? ' <span class="text-[10px] text-slate-400 font-normal">· продукт/добавка</span>' : ''}</span>
+                    <button class="shrink-0 h-8 text-[11px] font-bold text-slate-300 px-2.5 rounded-lg bg-slate-800">Вернуть</button>`;
+                row.querySelector('button').onclick = () => setItemStopped(name, false);
+                container.appendChild(row);
+            });
+        }
+
+        function rerenderAll() {
+            updateStopListBadge();
+            renderMap();
+            if (isOpen('orderScreen') && activeTable()) renderOrderScreen();
+            if (isOpen('stopListModal')) renderActiveStopList();
+        }
+
+        // ==========================================
+        // КЛАВИАТУРА И СИСТЕМНЫЕ МЕЛОЧИ
+        // ==========================================
+        $('renameInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveTableName(); } });
+        $('modCustomNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!$('modConfirmBtn').disabled) confirmModifierSelection(); else e.target.blur(); } });
+        $('itemSheetNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveItemSheet(); } });
+        $('menuSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+        // Нажатие на затемнённый фон закрывает окно
+        [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
+         ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal]]
+            .forEach(([id, fn]) => $(id).addEventListener('click', e => { if (e.target.id === id) fn(); }));
+
+        // ==========================================
+        // ЗАПУСК
+        // ==========================================
+        /** Системная кнопка «Назад» в приложении: закрывает верхнее окно. false — закрывать нечего. */
+        function handleBack() {
+            if (isOpen('confirmModal')) { closeConfirmModal(); return true; }
+            if (isOpen('renameModal')) { closeRenameModal(); return true; }
+            if (isOpen('itemSheet')) { saveItemSheet(); return true; }
+            if (isOpen('modifierModal')) { closeModifierModal(); return true; }
+            if (isOpen('guestCountModal')) { closeGuestCountModal(); return true; }
+            if (isOpen('stopListModal')) { closeStopListModal(); return true; }
+            if (isOpen('orderScreen')) {
+                if (searchQuery) { clearMenuSearch(); $('menuSearchInput').blur(); return true; }
+                closeOrderScreen();
+                return true;
+            }
+            if (isEditMode) { toggleEditMode(); return true; }
+            return false;
+        }
+        window.handleBack = handleBack;
+
+        function initApp() {
+            loadLocal();
+            updateStopListBadge();
+            renderMap();
+            setInterval(() => { if (!isOpen('orderScreen') && !isEditMode) renderMap(); }, 30000);
+        }
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
+        else initApp();
+    </script>
+</body>
+</html>

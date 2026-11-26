@@ -1,0 +1,81 @@
+# APK «Заказы» (приём заказов официанта). Собирается при изменениях в waiter/ и публикуется
+# отдельным релизом waiter-N (не «последним»: кнопки README переводчика продолжают вести на свой релиз)
+name: Waiter APK
+
+on:
+  push:
+    branches: [main, ccr-38d86fba-affovh]
+    paths:
+      - 'waiter/**'
+      - '.github/workflows/waiter-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Страница с встроенными стилями собирается заново, чтобы APK всегда соответствовал waiter/web/index.html
+      - name: Build page
+        working-directory: waiter/tools
+        run: npm install --no-audit --no-fund && npm run build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      # Тот же ключ, что у ярлыка переводчика (Secrets), иначе — новый на эту сборку
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.LAUNCHER_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.LAUNCHER_STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/launcher.jks"
+            echo "LAUNCHER_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          else
+            PASS="$(openssl rand -hex 16)"
+            echo "::add-mask::$PASS"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/launcher.jks" -storepass "$PASS" -keypass "$PASS" \
+              -alias launcher -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=Waiter Orders"
+            echo "LAUNCHER_STORE_PASSWORD=$PASS" >> "$GITHUB_ENV"
+          fi
+          echo "LAUNCHER_KEYSTORE=$RUNNER_TEMP/launcher.jks" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: waiter/android
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Rename APK
+        run: cp waiter/android/app/build/outputs/apk/release/app-release.apk Zakazy.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zakazy-apk
+          path: Zakazy.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: waiter-${{ github.run_number }}
+          name: Заказы — сборка ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+          prerelease: true
+          files: Zakazy.apk
+          body: |
+            **Zakazy.apk** — приложение «Заказы» для официанта: схема зала, заказы по гостям, стоп-лист.
+            Работает без интернета. Новая сборка ставится поверх старой, заказы сохраняются.

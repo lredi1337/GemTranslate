@@ -1,0 +1,11 @@
+{
+  "name": "waiter-tools",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "postcss": "8.4.49",
+    "tailwindcss": "3.4.17"
+  }
+}
