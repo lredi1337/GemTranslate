@@ -269,7 +269,8 @@
                 <button onclick="closeTableMenu(); copyOrder()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg></span>Скопировать заказ</button>
                 <button onclick="closeTableMenu(); openRenameModal()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5l4 4L9 19H5v-4z"/><path d="M13.5 6.5l4 4"/></svg></span>Номер стола</button>
                 <button onclick="closeTableMenu(); openGuestCountEdit()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg></span><span id="tableMenuGuests">Число гостей</span></button>
-                <button onclick="closeTableMenu(); openMoveTable()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M14 4l3 3-3 3M20 17H7M10 14l-3 3 3 3"/></svg></span>Пересадить / объединить</button>
+                <button onclick="closeTableMenu(); openMoveTable()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M14 4l3 3-3 3M20 17H7M10 14l-3 3 3 3"/></svg></span>Пересадить на другой стол</button>
+                <button onclick="closeTableMenu(); openMergeTable()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="7" height="10" rx="1.5"/><rect x="14" y="7" width="7" height="10" rx="1.5"/><path d="M10 12h4"/></svg></span>Объединить с другим столом</button>
                 <div class="h-px bg-slate-800 my-1.5 mx-3"></div>
                 <button onclick="closeTableMenu(); confirmClearTableOrder()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-bold text-rose-400 active:bg-rose-500/10"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H14"/><path d="M10 12h10M17 9l3 3-3 3"/></svg>Закрыть стол (гости ушли)</button>
             </div>
@@ -2775,7 +2776,7 @@
         // ==========================================
         let pickerCallback = null;
 
-        function openPicker({ title, hint, filter, exclude, onPick }) {
+        function openPicker({ title, hint, filter, exclude, onPick, empty }) {
             $('pickerTitle').textContent = title;
             $('pickerHint').textContent = hint || '';
             const grid = $('pickerGrid');
@@ -2783,7 +2784,7 @@
             pickerCallback = onPick;
             const tables = state.tables.filter(t => t.id !== exclude && (!filter || filter(t)))
                 .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
-            if (!tables.length) grid.innerHTML = '<div class="col-span-4 text-center text-[13px] text-slate-400 py-6">Подходящих столов нет</div>';
+            if (!tables.length) grid.innerHTML = `<div class="col-span-4 text-center text-[14px] text-slate-300 py-6 px-2 leading-snug">${esc(empty || 'Подходящих столов нет')}</div>`;
             tables.forEach(t => {
                 const st = tableStatus(t);
                 const btn = document.createElement('button');
@@ -2797,14 +2798,31 @@
         }
         function closePicker() { hide('pickerModal'); pickerCallback = null; }
 
+        /** Пересадить: показываем только свободные столы — заказ переезжает целиком. */
         function openMoveTable() {
             const from = activeTable();
             if (!from) return;
             openPicker({
                 title: `Стол ${from.label}: куда пересадить?`,
-                hint: 'Свободный стол — заказ переедет целиком. Занятый — заказы объединятся, гости второго стола добавятся следом.',
+                hint: 'Заказ, гости и отметки переедут на выбранный свободный стол.',
                 exclude: from.id,
-                onPick: to => { if (tableHasOrder(to)) { closePicker(); confirmMerge(from, to); } else moveTable(from, to); }
+                filter: t => !tableHasOrder(t),
+                empty: 'Свободных столов нет. Если гости садятся к другой компании — «Объединить с другим столом».',
+                onPick: to => moveTable(from, to)
+            });
+        }
+
+        /** Объединить: показываем только занятые столы — заказы складываются в один. */
+        function openMergeTable() {
+            const from = activeTable();
+            if (!from) return;
+            openPicker({
+                title: `Стол ${from.label}: с каким объединить?`,
+                hint: `Заказ стола ${from.label} перейдёт на выбранный стол, его гости станут следующими по номеру. Стол ${from.label} освободится.`,
+                exclude: from.id,
+                filter: tableHasOrder,
+                empty: 'Других занятых столов нет — объединять не с чем. Чтобы просто сменить стол — «Пересадить на другой стол».',
+                onPick: to => { closePicker(); confirmMerge(from, to); }
             });
         }
 
