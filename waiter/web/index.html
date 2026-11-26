@@ -54,6 +54,10 @@
             50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
         }
         .needs-attention { animation: pulse-border 2.5s infinite; }
+        /* Долго ждут: красный — забыл вбить, жёлтый — давно ждут блюда */
+        @keyframes pulse-red { 0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6); } 50% { box-shadow: 0 0 0 7px rgba(244, 63, 94, 0); } }
+        .late-red { animation: pulse-red 1.6s infinite; }
+        .late-amber { animation: pulse-border 1.6s infinite; }
         /* Заказ свёрнут: видна только строка-заголовок */
         #orderPanel.collapsed #currentOrderBox { display: none; }
         #orderPanel.collapsed .chev { transform: rotate(-90deg); }
@@ -85,10 +89,10 @@
         <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
         <header class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shrink-0 z-20 top-safe">
             <div class="px-3 h-14 flex items-center justify-between gap-2">
-                <div class="min-w-0 flex-1">
-                    <p id="headerTitle" class="text-xs font-semibold uppercase tracking-wider text-slate-400 leading-none mb-1">Заказы</p>
+                <button onclick="openShiftScreen()" class="min-w-0 flex-1 text-left" aria-label="Смена и история">
+                    <p id="headerTitle" class="text-xs font-semibold uppercase tracking-wider text-slate-400 leading-none mb-1 truncate">Заказы</p>
                     <h1 id="headerSubtitle" class="font-bold text-[15px] leading-tight text-white truncate">Нажми на стол</h1>
-                </div>
+                </button>
                 <div class="flex items-center gap-2 shrink-0">
                     <button id="stopHeaderBtn" onclick="openStopListModal()" class="h-10 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-[13px] font-bold border border-rose-500/30 transition flex items-center gap-1.5">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span>Стоп</span>
@@ -217,6 +221,47 @@
             </div>
         </div>
 
+        <!-- ОКНО: ВЫБОР СТОЛА (пересадить, вернуть из истории) -->
+        <div id="pickerModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-[55] hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl max-h-[85%] flex flex-col">
+                <div class="flex items-start justify-between gap-2 mb-1 shrink-0">
+                    <h3 id="pickerTitle" class="text-base font-extrabold text-white">Выбери стол</h3>
+                    <button onclick="closePicker()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <p id="pickerHint" class="text-[13px] text-slate-400 mb-3 shrink-0"></p>
+                <div id="pickerGrid" class="grid grid-cols-4 gap-2 overflow-y-auto no-scrollbar"></div>
+            </div>
+        </div>
+
+        <!-- ЭКРАН: СМЕНА И ИСТОРИЯ -->
+        <div id="shiftScreen" class="fixed inset-0 bg-slate-950 z-30 hidden flex flex-col">
+            <div class="bg-slate-900 border-b border-slate-800 shrink-0 top-safe">
+                <div class="px-2 h-14 flex items-center gap-2">
+                    <button onclick="closeShiftScreen()" class="w-11 h-11 rounded-xl text-slate-200 flex items-center justify-center" aria-label="Назад"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+                    <h2 class="font-bold text-base text-white">Смена и история</h2>
+                </div>
+            </div>
+            <div id="shiftContent" class="flex-1 min-h-0 overflow-y-auto no-scrollbar p-3 space-y-3 bottom-safe" style="overscroll-behavior: contain;"></div>
+        </div>
+
+        <!-- ОКНО: СТОЛ ИЗ ИСТОРИИ -->
+        <div id="historyModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl max-h-[90%] flex flex-col">
+                <div class="flex items-start justify-between gap-2 mb-2 shrink-0">
+                    <div class="min-w-0">
+                        <h3 id="historyTitle" class="text-base font-extrabold text-white">Стол</h3>
+                        <p id="historyMeta" class="text-[13px] text-slate-400"></p>
+                    </div>
+                    <button onclick="closeHistoryModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <div id="historyItems" class="flex-1 min-h-0 overflow-y-auto no-scrollbar mb-3"></div>
+                <div class="flex gap-2 shrink-0">
+                    <button onclick="copyHistoryTable()" class="px-4 py-3 rounded-2xl bg-slate-800 text-slate-200 font-bold text-sm">Скопировать</button>
+                    <button id="historyRestoreBtn" onclick="restoreHistoryTable()" class="flex-1 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-sm">Вернуть на стол</button>
+                </div>
+            </div>
+        </div>
+
         <!-- ОКНО: ДЕЙСТВИЯ СО СТОЛОМ (⋯) -->
         <div id="tableMenuModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden flex items-end justify-center">
             <div class="bg-slate-900 border-t border-slate-700 w-full max-w-md rounded-t-3xl px-3 pt-2 bottom-safe shadow-2xl">
@@ -224,6 +269,7 @@
                 <button onclick="closeTableMenu(); copyOrder()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg></span>Скопировать заказ</button>
                 <button onclick="closeTableMenu(); openRenameModal()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5l4 4L9 19H5v-4z"/><path d="M13.5 6.5l4 4"/></svg></span>Номер стола</button>
                 <button onclick="closeTableMenu(); openGuestCountEdit()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg></span><span id="tableMenuGuests">Число гостей</span></button>
+                <button onclick="closeTableMenu(); openMoveTable()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M14 4l3 3-3 3M20 17H7M10 14l-3 3 3 3"/></svg></span>Пересадить / объединить</button>
                 <div class="h-px bg-slate-800 my-1.5 mx-3"></div>
                 <button onclick="closeTableMenu(); confirmClearTableOrder()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-bold text-rose-400 active:bg-rose-500/10"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H14"/><path d="M10 12h10M17 9l3 3-3 3"/></svg>Закрыть стол (гости ушли)</button>
             </div>
@@ -717,6 +763,8 @@
             plus: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
             minus: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>',
             pencil: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5l4 4L9 19H5v-4z"/><path d="M13.5 6.5l4 4"/></svg>',
+            clock: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+            chevron: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
             person: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>'
         };
         const $ = id => document.getElementById(id);
@@ -728,12 +776,17 @@
         const newUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
         function freshTable(def) {
-            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, items: [], missing: [] };
+            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], missing: [] };
         }
 
         /** Чинит данные из любой версии: недостающие поля, новые столы из схемы по умолчанию. */
         function normalizeState(raw) {
-            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], custom: [], mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
+            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], custom: [], shifts: [], mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
+            // Смены: { id, openedAt, closedAt, tables: [закрытые столы] } — хранятся последние 40
+            s.shifts = (Array.isArray(raw?.shifts) ? raw.shifts : []).filter(x => x && x.id && x.openedAt).slice(-40).map(x => ({
+                id: String(x.id), openedAt: Number(x.openedAt), closedAt: Number(x.closedAt) || 0,
+                tables: Array.isArray(x.tables) ? x.tables.filter(r => r && Array.isArray(r.items)) : []
+            }));
             // Свои позиции: { id, name, group, options: [] }
             const seen = new Set();
             (Array.isArray(raw?.custom) ? raw.custom : []).forEach(c => {
@@ -756,6 +809,8 @@
                     posSynced: !!t.posSynced,
                     served: !!t.posSynced && !!t.served,
                     openedAt: Number(t.openedAt) || 0,
+                    changedAt: Number(t.changedAt) || Number(t.openedAt) || 0,
+                    posAt: Number(t.posAt) || 0,
                     missing: Array.isArray(t.missing) ? [...new Set(t.missing.filter(id => SERVE_ITEM_IDS.has(id)))] : [],
                     items: Array.isArray(t.items) ? t.items.filter(i => i && i.name).map(i => ({
                         uid: String(i.uid || newUid()), name: String(i.name), group: i.group === 'bar' ? 'bar' : 'kitchen',
@@ -830,7 +885,7 @@
             try { Native && Native.saveState(json); } catch (e) {}
         }
 
-        function snapshot() { return JSON.stringify({ tables: state.tables, stop: state.stop, removed: state.removed, custom: state.custom, mode: state.mode }); }
+        function snapshot() { return JSON.stringify({ tables: state.tables, stop: state.stop, removed: state.removed, custom: state.custom, shifts: state.shifts, mode: state.mode }); }
         function restoreSnapshot(snap) {
             const d = JSON.parse(snap);
             applyState(normalizeState({ ...d, ts: Date.now() }));
@@ -857,7 +912,7 @@
                 toast.classList.add('pointer-events-none');
             }
             // Открыто нижнее окно — уведомление сверху, чтобы не закрывать его кнопки; иначе над нижней панелью
-            const sheetOpen = ['modifierModal', 'itemSheet', 'stopListModal', 'guestCountModal', 'renameModal', 'confirmModal', 'serveModal', 'summaryModal'].some(isOpen);
+            const sheetOpen = ['pickerModal', 'historyModal', 'modifierModal', 'itemSheet', 'stopListModal', 'guestCountModal', 'renameModal', 'confirmModal', 'serveModal', 'summaryModal'].some(isOpen);
             if (sheetOpen) {
                 toast.style.top = 'calc(env(safe-area-inset-top) + 64px)';
                 toast.style.bottom = 'auto';
@@ -883,6 +938,32 @@
         // ==========================================
         function tableItemCount(t) { return t.items.reduce((a, i) => a + i.qty, 0); }
         function tableHasOrder(t) { return t.items.length > 0 || t.guestCount > 0; }
+
+        // Сколько можно ждать, минут: не вбит в POS / вбит, а блюда ещё не все отнесены
+        const LATE_NEW_MIN = 5;
+        const LATE_POS_MIN = 20;
+        /** Стол «застрял»: красный дольше 5 минут или жёлтый с неотнесёнными блюдами дольше 20. */
+        function lateInfo(t) {
+            if (!t.items.length) return null;
+            const st = tableStatus(t);
+            const now = Date.now();
+            if (st === 'new' && t.changedAt) {
+                const m = Math.floor((now - t.changedAt) / 60000);
+                if (m >= LATE_NEW_MIN) return { kind: 'red', minutes: m, text: `не вбит ${m} мин` };
+            }
+            if (st === 'pos' && t.posAt && leftToDeliver(t) > 0) {
+                const m = Math.floor((now - t.posAt) / 60000);
+                if (m >= LATE_POS_MIN) return { kind: 'amber', minutes: m, text: `ждут ${m} мин` };
+            }
+            return null;
+        }
+
+        /** Любое изменение заказа: стол снова «принят» (красный), отсчёт «не вбит» — с этого момента. */
+        function markTableChanged(table) {
+            table.posSynced = false;
+            table.served = false;
+            table.changedAt = Date.now();
+        }
         /** free — свободен; new — заказ принят, не вбит (красный); pos — вбит, ждут блюда (жёлтый); served — всё отдано (зелёный) */
         function tableStatus(t) {
             if (!tableHasOrder(t)) return 'free';
@@ -907,13 +988,14 @@
             const container = $('tablesContainer');
             container.innerHTML = '';
             const serving = appMode() === 'serving';
-            let activeCount = 0, unsynced = 0, needTables = 0, needTotal = 0;
+            let activeCount = 0, unsynced = 0, needTables = 0, needTotal = 0, lateCount = 0;
 
             state.tables.forEach(table => {
                 const total = tableItemCount(table);
                 const hasOrder = tableHasOrder(table);
                 if (hasOrder) activeCount++;
                 if (table.items.length && !table.posSynced) unsynced++;
+                if (lateInfo(table)) lateCount++;
                 const missing = table.missing.length;
                 if (missing) { needTables++; needTotal += missing; }
 
@@ -940,16 +1022,21 @@
                 } else {
                     const st = STATUS_STYLE[tableStatus(table)];
                     cls += st ? st.card : 'bg-slate-800/85 border-slate-700/90 text-slate-200';
+                    const late = lateInfo(table);
+                    if (late) cls += late.kind === 'red' ? ' late-red' : ' late-amber';
                     const shownCount = tableStatus(table) === 'pos' ? leftToDeliver(table) : total;
                     if (shownCount > 0 && st) {
                         badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${st.badge} font-extrabold text-[11px] flex items-center justify-center shadow">${shownCount}</div>`;
                     }
-                    if (st) {
+                    if (st && late) {
+                        sub = `<span class="text-[11px] font-extrabold mt-1 flex items-center gap-0.5 ${late.kind === 'red' ? 'text-rose-200' : 'text-amber-200'}">${ICON.clock}${late.minutes}м</span>`;
+                    } else if (st) {
                         const time = elapsedLabel(table.openedAt);
                         sub = `<span class="text-[11px] font-bold mt-1 flex items-center gap-0.5 ${st.sub}">${ICON.person}${table.guestCount || 1}${time ? '<span class="opacity-60 mx-0.5">·</span>' + time : ''}</span>`;
                     } else if (table.label === '?') sub = `<span class="text-[11px] text-slate-400 mt-0.5">новый</span>`;
                 }
                 el.className = cls;
+                el.dataset.label = table.label;
                 el.innerHTML = `${badge}<span class="font-extrabold text-xl leading-none max-w-full px-1 truncate">${esc(table.label)}</span>${sub}`;
                 bindTableNode(el, table);
                 container.appendChild(el);
@@ -961,13 +1048,15 @@
             setTabBadge('tabOrdersBadge', unsynced);
             setTabBadge('tabServingBadge', needTables);
 
-            $('headerTitle').textContent = serving ? 'Сервировка' : 'Заказы';
+            const shift = currentShift();
+            $('headerTitle').innerHTML = `${serving ? 'Сервировка' : 'Заказы'} · ${shift ? `смена с ${hhmm(shift.openedAt)}` : '<span class="text-amber-300">смена не открыта</span>'} ›`;
             $('stopHeaderBtn').classList.toggle('hidden', serving);
             const sub = $('headerSubtitle');
             if (isEditMode) sub.textContent = 'Редактирование схемы';
             else if (serving) sub.textContent = needTables ? `Пополнить ${needTables} ${plural(needTables, 'стол', 'стола', 'столов')} · ${needTotal} поз.` : 'Все столы укомплектованы';
+            else if (lateCount) sub.textContent = `${activeCount} в работе · ${lateCount} ${plural(lateCount, 'стол ждёт', 'стола ждут', 'столов ждут')} ⏱`;
             else sub.textContent = activeCount > 0 ? `${activeCount} в работе${unsynced ? ` · ${unsynced} не ${plural(unsynced, 'вбит', 'вбиты', 'вбиты')}` : ''}` : 'Нажми на стол';
-            sub.className = `font-bold text-[15px] leading-tight truncate ${isEditMode ? 'text-white' : (!serving && unsynced) ? 'text-rose-300' : (serving && needTables) ? 'text-amber-300' : 'text-white'}`;
+            sub.className = `font-bold text-[15px] leading-tight truncate ${isEditMode ? 'text-white' : (!serving && (unsynced || lateCount)) ? 'text-rose-300' : (serving && needTables) ? 'text-amber-300' : 'text-white'}`;
         }
 
         function plural(n, one, few, many) {
@@ -1140,8 +1229,9 @@
             }
             table.guestCount = count;
             table.activeGuest = 1;
-            table.posSynced = false; table.served = false;
+            markTableChanged(table);
             table.openedAt = Date.now();
+            ensureShift();
             saveState();
             closeGuestCountModal();
             renderMap();
@@ -1221,7 +1311,8 @@
         function renderDelivery(table) {
             const total = tableItemCount(table);
             const left = leftToDeliver(table);
-            $('deliveryTitle').textContent = left ? 'Отнести гостям' : 'Всё отнесено';
+            const waited = table.posAt ? Math.floor((Date.now() - table.posAt) / 60000) : 0;
+            $('deliveryTitle').textContent = left ? `Отнести гостям${waited >= 1 ? ` · ждут ${waited} мин` : ''}` : 'Всё отнесено';
             $('deliveryProgress').textContent = left ? `осталось ${left} из ${total}` : `${total} из ${total} ✓`;
             $('deliveryProgress').className = `text-[13px] font-bold ${left ? 'text-amber-300' : 'text-emerald-300'}`;
             $('deliveryBar').style.width = `${Math.round((total - left) / Math.max(1, total) * 100)}%`;
@@ -1408,13 +1499,13 @@
                     table.items = table.items.filter(x => x.uid !== item.uid);
                     showToast(`Убрано: ${item.name}`, { label: 'Вернуть', fn: () => restoreSnapshot(snap) });
                 }
-                table.posSynced = false; table.served = false;
+                markTableChanged(table);
                 saveState();
                 renderOrderScreen();
             };
             row.querySelector('.btn-inc').onclick = () => {
                 item.qty += 1;
-                table.posSynced = false; table.served = false;
+                markTableChanged(table);
                 saveState();
                 renderOrderScreen();
             };
@@ -1482,7 +1573,7 @@
                 if (note !== item.note) {
                     item.note = note;
                     mergeDuplicate(table, item);
-                    table.posSynced = false; table.served = false;
+                    markTableChanged(table);
                     saveState();
                     renderOrderScreen();
                 }
@@ -1496,7 +1587,7 @@
             if (item) {
                 const snap = snapshot();
                 table.items = table.items.filter(x => x !== item);
-                table.posSynced = false; table.served = false;
+                markTableChanged(table);
                 saveState();
                 renderOrderScreen();
                 showToast(`Удалено: ${item.name}`, { label: 'Вернуть', fn: () => restoreSnapshot(snap) });
@@ -1980,7 +2071,7 @@
             if (existing) existing.qty += 1;
             else table.items.push({ uid: newUid(), name: item.name, group: item.group, guest, qty: 1, option, note });
             if (!table.openedAt) table.openedAt = Date.now();
-            table.posSynced = false; table.served = false;
+            markTableChanged(table);
             saveState();
             renderOrderScreen();
             vibrate(12);
@@ -2023,6 +2114,7 @@
             const status = tableStatus(table);
             if (status === 'new') {
                 table.posSynced = true;
+                table.posAt = Date.now();
                 table.served = leftToDeliver(table) === 0;
                 reorderMode = false;
                 vibrate(20);
@@ -2096,7 +2188,8 @@
             if (!table) return;
             const close = () => {
                 const snap = snapshot();
-                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, items: [] });
+                recordClosedTable(table);
+                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
                 saveState();
                 closeOrderScreen();
                 // Гости ушли — сразу отметить, что пополнить на столе
@@ -2447,6 +2540,315 @@
             });
         }
 
+
+        // ==========================================
+        // СМЕНЫ И ИСТОРИЯ ЗАКРЫТЫХ СТОЛОВ
+        // ==========================================
+        const hhmm = ts => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        const dayLabel = ts => new Date(ts).toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
+        const durationLabel = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${String(m % 60).padStart(2, '0')} мин`; };
+        const currentShift = () => (state.shifts || []).find(x => !x.closedAt) || null;
+        const recordQty = r => r.items.reduce((n, i) => n + i.qty, 0);
+        let openShiftIds = new Set();   // какие прошлые смены развёрнуты в истории
+        let historyRef = null;          // { shiftId, recId } — открытый стол из истории
+
+        function openShift() {
+            if (currentShift()) return currentShift();
+            const shift = { id: 'sh_' + newUid(), openedAt: Date.now(), closedAt: 0, tables: [] };
+            state.shifts.push(shift);
+            if (state.shifts.length > 40) state.shifts.splice(0, state.shifts.length - 40);
+            return shift;
+        }
+
+        /** Первый заказ без открытой смены открывает её сам. */
+        function ensureShift() {
+            if (currentShift()) return;
+            const shift = openShift();
+            showToast(`Смена открыта в ${hhmm(shift.openedAt)}`);
+        }
+
+        function recordClosedTable(table, note) {
+            if (!table.items.length) return;
+            const shift = currentShift() || openShift();
+            shift.tables.push({
+                id: 'r_' + newUid(), tableId: table.id, label: table.label, guestCount: table.guestCount,
+                openedAt: table.openedAt || Date.now(), closedAt: Date.now(), status: tableStatus(table), note: note || '',
+                items: JSON.parse(JSON.stringify(table.items))
+            });
+        }
+
+        function openShiftScreen() {
+            renderShiftScreen();
+            show('shiftScreen');
+            $('shiftContent').scrollTop = 0;
+        }
+        function closeShiftScreen() { hide('shiftScreen'); renderMap(); }
+
+        function shiftTableRow(shift, rec) {
+            const row = document.createElement('button');
+            const color = { new: 'bg-rose-500 text-white', pos: 'bg-amber-500 text-slate-950', served: 'bg-emerald-500 text-slate-950' }[rec.status] || 'bg-slate-600 text-white';
+            row.className = 'w-full text-left flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800 active:bg-slate-800';
+            const names = rec.items.map(i => i.qty > 1 ? `${i.name} ×${i.qty}` : i.name).join(', ');
+            row.innerHTML = `
+                <span class="min-w-[2.5rem] h-10 px-1.5 rounded-xl ${color} font-extrabold text-base flex items-center justify-center shrink-0">${esc(rec.label)}</span>
+                <span class="flex-1 min-w-0">
+                    <span class="block text-[15px] font-bold text-white">${hhmm(rec.openedAt)}–${hhmm(rec.closedAt)} · ${rec.guestCount} ${plural(rec.guestCount, 'гость', 'гостя', 'гостей')} · ${recordQty(rec)} поз.</span>
+                    <span class="block text-[13px] text-slate-400 truncate">${rec.note ? `<span class="text-amber-300">${esc(rec.note)}</span> · ` : ''}${esc(names)}</span>
+                </span>`;
+            row.onclick = () => openHistoryModal(shift.id, rec.id);
+            return row;
+        }
+
+        function renderShiftScreen() {
+            const box = $('shiftContent');
+            box.innerHTML = '';
+            const shift = currentShift();
+            const active = state.tables.filter(tableHasOrder);
+
+            const card = document.createElement('div');
+            card.className = 'rounded-3xl p-4 border ' + (shift ? 'bg-emerald-500/[0.07] border-emerald-500/30' : 'bg-amber-500/[0.07] border-amber-500/30');
+            if (shift) {
+                const closedQty = shift.tables.reduce((n, r) => n + recordQty(r), 0);
+                card.innerHTML = `
+                    <div class="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-1">Смена открыта</div>
+                    <div class="text-xl font-extrabold text-white">${dayLabel(shift.openedAt)}, с ${hhmm(shift.openedAt)}</div>
+                    <div class="text-[13px] text-slate-300 mt-0.5">идёт ${durationLabel(Date.now() - shift.openedAt)}</div>
+                    <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                        <div class="rounded-xl bg-slate-900/70 py-2"><div class="text-lg font-extrabold text-white">${shift.tables.length}</div><div class="text-[11px] text-slate-400">закрыто столов</div></div>
+                        <div class="rounded-xl bg-slate-900/70 py-2"><div class="text-lg font-extrabold text-white">${closedQty}</div><div class="text-[11px] text-slate-400">позиций</div></div>
+                        <div class="rounded-xl bg-slate-900/70 py-2"><div class="text-lg font-extrabold text-white">${active.length}</div><div class="text-[11px] text-slate-400">сейчас за столами</div></div>
+                    </div>
+                    <label class="flex items-center gap-2.5 mt-4 text-[14px] text-slate-200"><input id="shiftClearStop" type="checkbox" class="w-5 h-5 accent-emerald-500" checked> Очистить стоп-лист</label>
+                    <label class="flex items-center gap-2.5 mt-2 text-[14px] text-slate-200"><input id="shiftClearServe" type="checkbox" class="w-5 h-5 accent-emerald-500"> Снять отметки сервировки</label>
+                    <button id="closeShiftBtn" class="w-full mt-4 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 font-extrabold text-sm">Закрыть смену</button>`;
+                card.querySelector('#closeShiftBtn').onclick = confirmCloseShift;
+            } else {
+                card.innerHTML = `
+                    <div class="text-xs font-bold uppercase tracking-wider text-amber-300 mb-1">Смена не открыта</div>
+                    <div class="text-[14px] text-slate-300">Закрытые столы будут собираться в историю этой смены. Смена откроется и сама при первом заказе.</div>
+                    <button id="openShiftBtn" class="w-full mt-4 h-12 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-sm">Открыть смену</button>`;
+                card.querySelector('#openShiftBtn').onclick = () => {
+                    const sh = openShift(); saveState(); renderShiftScreen(); renderMap();
+                    showToast(`Смена открыта в ${hhmm(sh.openedAt)}`);
+                };
+            }
+            box.appendChild(card);
+
+            if (shift) {
+                const h = document.createElement('div');
+                h.className = 'text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1 pt-2';
+                h.textContent = shift.tables.length ? 'Закрытые столы этой смены' : 'Закрытых столов пока нет';
+                box.appendChild(h);
+                [...shift.tables].reverse().forEach(rec => box.appendChild(shiftTableRow(shift, rec)));
+            }
+
+            const past = state.shifts.filter(x => x.closedAt).reverse();
+            if (past.length) {
+                const h = document.createElement('div');
+                h.className = 'text-xs font-extrabold uppercase tracking-wider text-slate-400 px-1 pt-4';
+                h.textContent = 'Прошлые смены';
+                box.appendChild(h);
+                past.forEach(sh => {
+                    const open = openShiftIds.has(sh.id);
+                    const btn = document.createElement('button');
+                    btn.className = 'w-full text-left flex items-center gap-3 p-3.5 rounded-2xl bg-slate-900 border border-slate-800';
+                    const qty = sh.tables.reduce((n, r) => n + recordQty(r), 0);
+                    btn.innerHTML = `
+                        <span class="flex-1 min-w-0">
+                            <span class="block text-[15px] font-bold text-white">${dayLabel(sh.openedAt)} · ${hhmm(sh.openedAt)}–${hhmm(sh.closedAt)}</span>
+                            <span class="block text-[13px] text-slate-400">${sh.tables.length} ${plural(sh.tables.length, 'стол', 'стола', 'столов')} · ${qty} поз. · ${durationLabel(sh.closedAt - sh.openedAt)}</span>
+                        </span>
+                        <span class="text-slate-400 transition ${open ? 'rotate-180' : ''}">${ICON.chevron}</span>`;
+                    btn.onclick = () => { open ? openShiftIds.delete(sh.id) : openShiftIds.add(sh.id); renderShiftScreen(); };
+                    box.appendChild(btn);
+                    if (open) {
+                        const list = document.createElement('div');
+                        list.className = 'space-y-2 pl-3 border-l-2 border-slate-800 ml-2';
+                        if (!sh.tables.length) list.innerHTML = '<div class="text-[13px] text-slate-500 py-2">Столов не было</div>';
+                        [...sh.tables].reverse().forEach(rec => list.appendChild(shiftTableRow(sh, rec)));
+                        box.appendChild(list);
+                    }
+                });
+            }
+        }
+
+        function confirmCloseShift() {
+            const shift = currentShift();
+            if (!shift) return;
+            const clearStop = $('shiftClearStop')?.checked;
+            const clearServe = $('shiftClearServe')?.checked;
+            const active = state.tables.filter(tableHasOrder);
+            const desc = active.length
+                ? `За столами ещё ${active.length} ${plural(active.length, 'заказ', 'заказа', 'заказов')} — они уйдут в историю смены, столы освободятся.`
+                : 'Все закрытые столы останутся в истории.';
+            openConfirmModal(`Закрыть смену ${hhmm(shift.openedAt)}–${hhmm(Date.now())}?`, desc, () => {
+                const snap = snapshot();
+                active.forEach(t => {
+                    recordClosedTable(t, 'открыт при закрытии смены');
+                    Object.assign(t, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
+                });
+                shift.closedAt = Date.now();
+                if (clearStop) state.stop = [];
+                if (clearServe) state.tables.forEach(t => { t.missing = []; });
+                saveState();
+                rerenderAll();
+                renderShiftScreen();
+                showToast('Смена закрыта', { label: 'Отменить', fn: () => { restoreSnapshot(snap); renderShiftScreen(); } });
+            });
+        }
+
+        function findRecord(ref) {
+            const shift = ref && state.shifts.find(x => x.id === ref.shiftId);
+            const rec = shift && shift.tables.find(r => r.id === ref.recId);
+            return rec ? { shift, rec } : null;
+        }
+
+        function openHistoryModal(shiftId, recId) {
+            historyRef = { shiftId, recId };
+            const found = findRecord(historyRef);
+            if (!found) return;
+            const { shift, rec } = found;
+            $('historyTitle').textContent = rec.label === '?' ? 'Новый столик' : `Стол №${rec.label}`;
+            const statusText = { new: 'не был вбит', pos: 'вбит, не всё отнесено', served: 'всё отдано' }[rec.status] || '';
+            $('historyMeta').textContent = `${dayLabel(rec.openedAt)}, ${hhmm(rec.openedAt)}–${hhmm(rec.closedAt)} · ${rec.guestCount} ${plural(rec.guestCount, 'гость', 'гостя', 'гостей')} · ${statusText}`;
+            const box = $('historyItems');
+            box.innerHTML = '';
+            const guests = [...new Set(rec.items.map(i => i.guest))].sort((a, b) => a - b);
+            guests.forEach(g => {
+                const head = document.createElement('div');
+                head.className = 'text-xs font-extrabold text-amber-300 uppercase tracking-wider mt-2 mb-1 flex items-center gap-1';
+                head.innerHTML = `${ICON.person} Гость ${g}`;
+                box.appendChild(head);
+                rec.items.filter(i => i.guest === g).forEach(i => {
+                    const row = document.createElement('div');
+                    row.className = 'flex items-start justify-between gap-2 py-2 px-3 mb-1 rounded-xl bg-slate-800';
+                    const extra = [i.option ? `<span class="text-emerald-300">${esc(i.option)}</span>` : '', i.note ? `<span class="text-amber-300">«${esc(i.note)}»</span>` : ''].filter(Boolean).join(' · ');
+                    row.innerHTML = `<span class="min-w-0"><span class="block text-[15px] font-semibold text-white">${esc(i.name)}</span>${extra ? `<span class="block text-[13px]">${extra}</span>` : ''}</span><span class="text-[15px] font-extrabold text-white shrink-0">×${i.qty}</span>`;
+                    box.appendChild(row);
+                });
+            });
+            show('historyModal');
+        }
+        function closeHistoryModal() { hide('historyModal'); historyRef = null; }
+
+        async function copyHistoryTable() {
+            const found = findRecord(historyRef);
+            if (!found) return;
+            const r = found.rec;
+            const text = orderAsText({ label: r.label, guestCount: r.guestCount, items: r.items });
+            showToast(await copyText(text) ? 'Заказ скопирован ✓' : 'Не получилось скопировать');
+        }
+
+        /** Вернуть закрытый стол: на тот же стол, если он свободен, иначе — выбрать свободный. */
+        function restoreHistoryTable() {
+            const found = findRecord(historyRef);
+            if (!found) return;
+            const { shift, rec } = found;
+            const doRestore = target => {
+                const snap = snapshot();
+                Object.assign(target, {
+                    guestCount: Math.max(1, rec.guestCount, ...rec.items.map(i => i.guest)), activeGuest: 1,
+                    posSynced: rec.status !== 'new', served: rec.status === 'served',
+                    openedAt: rec.openedAt, changedAt: Date.now(), posAt: rec.status !== 'new' ? Date.now() : 0,
+                    items: rec.items.map(i => ({ ...i, uid: newUid() }))
+                });
+                shift.tables = shift.tables.filter(x => x !== rec);
+                saveState();
+                closeHistoryModal();
+                closePicker();
+                hide('shiftScreen');
+                rerenderAll();
+                showToast(`Заказ вернулся на стол ${target.label}`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            };
+            const same = state.tables.find(t => t.id === rec.tableId);
+            if (same && !tableHasOrder(same)) { doRestore(same); return; }
+            openPicker({
+                title: 'Куда вернуть заказ?',
+                hint: same ? `Стол ${same.label} сейчас занят — выбери свободный.` : 'Выбери свободный стол.',
+                filter: t => !tableHasOrder(t),
+                onPick: doRestore
+            });
+        }
+
+        // ==========================================
+        // ВЫБОР СТОЛА; ПЕРЕСАДИТЬ / ОБЪЕДИНИТЬ
+        // ==========================================
+        let pickerCallback = null;
+
+        function openPicker({ title, hint, filter, exclude, onPick }) {
+            $('pickerTitle').textContent = title;
+            $('pickerHint').textContent = hint || '';
+            const grid = $('pickerGrid');
+            grid.innerHTML = '';
+            pickerCallback = onPick;
+            const tables = state.tables.filter(t => t.id !== exclude && (!filter || filter(t)))
+                .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+            if (!tables.length) grid.innerHTML = '<div class="col-span-4 text-center text-[13px] text-slate-400 py-6">Подходящих столов нет</div>';
+            tables.forEach(t => {
+                const st = tableStatus(t);
+                const btn = document.createElement('button');
+                const color = { new: 'border-rose-400 bg-rose-500/20', pos: 'border-amber-400 bg-amber-500/20', served: 'border-emerald-400 bg-emerald-500/20' }[st] || 'border-slate-700 bg-slate-800';
+                btn.className = `h-16 rounded-2xl border-2 ${color} flex flex-col items-center justify-center text-white`;
+                btn.innerHTML = `<span class="text-lg font-extrabold leading-none">${esc(t.label)}</span><span class="text-[11px] mt-1 ${st === 'free' ? 'text-slate-400' : 'text-slate-200'}">${st === 'free' ? 'свободен' : `${t.guestCount} г.`}</span>`;
+                btn.onclick = () => pickerCallback && pickerCallback(t);
+                grid.appendChild(btn);
+            });
+            show('pickerModal');
+        }
+        function closePicker() { hide('pickerModal'); pickerCallback = null; }
+
+        function openMoveTable() {
+            const from = activeTable();
+            if (!from) return;
+            openPicker({
+                title: `Стол ${from.label}: куда пересадить?`,
+                hint: 'Свободный стол — заказ переедет целиком. Занятый — заказы объединятся, гости второго стола добавятся следом.',
+                exclude: from.id,
+                onPick: to => { if (tableHasOrder(to)) { closePicker(); confirmMerge(from, to); } else moveTable(from, to); }
+            });
+        }
+
+        const TABLE_ORDER_FIELDS = ['guestCount', 'activeGuest', 'posSynced', 'served', 'openedAt', 'changedAt', 'posAt', 'items'];
+        const clearOrderFields = t => Object.assign(t, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
+
+        function moveTable(from, to) {
+            const snap = snapshot();
+            TABLE_ORDER_FIELDS.forEach(k => { to[k] = from[k]; });
+            clearOrderFields(from);
+            saveState();
+            closePicker();
+            activeTableId = to.id;
+            renderOrderScreen();
+            renderMap();
+            showToast(`Пересадили: ${from.label} → ${to.label}`, { label: 'Отменить', fn: () => { restoreSnapshot(snap); activeTableId = from.id; renderOrderScreen(); } });
+        }
+
+        function confirmMerge(from, to) {
+            openConfirmModal(`Объединить ${from.label} со столом ${to.label}?`,
+                `Гости стола ${from.label} станут гостями ${to.guestCount + 1}–${to.guestCount + from.guestCount} стола ${to.label}. Стол ${from.label} освободится.`,
+                () => {
+                    const snap = snapshot();
+                    const offset = to.guestCount;
+                    to.items.push(...from.items.map(i => ({ ...i, uid: newUid(), guest: i.guest + offset })));
+                    to.guestCount += from.guestCount;
+                    to.openedAt = Math.min(to.openedAt || Date.now(), from.openedAt || Date.now());
+                    // Общий статус — «самый ранний»: если хоть что-то не вбито, стол красный
+                    const order = { new: 0, pos: 1, served: 2, free: 3 };
+                    const worst = [tableStatus(to), tableStatus(from)].sort((a, b) => order[a] - order[b])[0];
+                    to.posSynced = worst !== 'new';
+                    to.served = worst === 'served';
+                    if (worst === 'new') to.changedAt = Math.min(to.changedAt || Date.now(), from.changedAt || Date.now());
+                    if (worst === 'pos') to.posAt = Math.min(...[to.posAt, from.posAt].filter(Boolean), Date.now());
+                    clearOrderFields(from);
+                    saveState();
+                    closePicker();
+                    activeTableId = to.id;
+                    renderOrderScreen();
+                    renderMap();
+                    showToast(`Столы объединены: ${to.label}`, { label: 'Отменить', fn: () => { restoreSnapshot(snap); activeTableId = from.id; renderOrderScreen(); } });
+                });
+        }
+
         function rerenderAll() {
             updateStopListBadge();
             renderMap();
@@ -2454,6 +2856,7 @@
             if (isOpen('stopListModal')) renderActiveStopList();
             if (isOpen('serveModal')) renderServeModal();
             if (isOpen('summaryModal')) renderSummaryContent();
+            if (isOpen('shiftScreen')) renderShiftScreen();
         }
 
         // ==========================================
@@ -2668,7 +3071,8 @@
         // Нажатие на затемнённый фон закрывает окно
         [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
          ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal],
-         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal], ['tableMenuModal', closeTableMenu], ['customModal', closeCustomModal]]
+         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal], ['tableMenuModal', closeTableMenu], ['customModal', closeCustomModal],
+         ['pickerModal', closePicker], ['historyModal', closeHistoryModal]]
             .forEach(([id, fn]) => $(id).addEventListener('click', e => { if (e.target.id === id) fn(); }));
 
         // ==========================================
@@ -2677,6 +3081,8 @@
         /** Системная кнопка «Назад» в приложении: закрывает верхнее окно. false — закрывать нечего. */
         function handleBack() {
             if (isOpen('confirmModal')) { closeConfirmModal(); return true; }
+            if (isOpen('pickerModal')) { closePicker(); return true; }
+            if (isOpen('historyModal')) { closeHistoryModal(); return true; }
             if (isOpen('tableMenuModal')) { closeTableMenu(); return true; }
             if (isOpen('customModal')) { closeCustomModal(); return true; }
             if (isOpen('renameModal')) { closeRenameModal(); return true; }
@@ -2693,6 +3099,7 @@
                 closeOrderScreen();
                 return true;
             }
+            if (isOpen('shiftScreen')) { closeShiftScreen(); return true; }
             if (isEditMode) { toggleEditMode(); return true; }
             return false;
         }
@@ -2703,7 +3110,7 @@
             updateStopListBadge();
             renderModeChrome();
             renderMap();
-            setInterval(() => { if (!isOpen('orderScreen') && !isEditMode && appMode() === 'orders') renderMap(); }, 30000);
+            setInterval(() => { if (!isOpen('orderScreen') && !isEditMode) renderMap(); }, 30000);
         }
 
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
