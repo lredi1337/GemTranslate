@@ -54,9 +54,13 @@
             50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
         }
         .needs-attention { animation: pulse-border 2.5s infinite; }
+        /* Заказ свёрнут: видна только строка-заголовок */
+        #orderPanel.collapsed #currentOrderBox { display: none; }
+        #orderPanel.collapsed .chev { transform: rotate(-90deg); }
+        .chev { transition: transform 0.2s ease; }
         /* Идёт поиск (открыта клавиатура): заказ гостя, категории и панель POS прячем,
            чтобы результаты были сразу под полем поиска, а не под клавиатурой */
-        #orderScreen.search-mode #currentOrderBox,
+        #orderScreen.search-mode #orderPanel,
         #orderScreen.search-mode #categoriesBar,
         #orderScreen.search-mode #posBar { display: none; }
     </style>
@@ -68,16 +72,16 @@
         <header class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shrink-0 z-20 top-safe">
             <div class="px-3 h-14 flex items-center justify-between gap-2">
                 <div class="min-w-0 flex-1">
-                    <h1 id="headerTitle" class="font-bold text-base leading-tight text-white whitespace-nowrap truncate">Приём заказов</h1>
-                    <p id="headerSubtitle" class="text-xs text-slate-400 truncate">Нажми на стол, чтобы принять заказ</p>
+                    <p id="headerTitle" class="text-xs font-semibold uppercase tracking-wider text-slate-400 leading-none mb-1">Заказы</p>
+                    <h1 id="headerSubtitle" class="font-bold text-[15px] leading-tight text-white truncate">Нажми на стол</h1>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
-                    <button id="stopHeaderBtn" onclick="openStopListModal()" class="h-10 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-bold border border-rose-500/30 transition flex items-center gap-1.5">
-                        <span>🚫 Стоп</span>
-                        <span id="stopListBadge" class="hidden bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-px rounded-full">0</span>
+                    <button id="stopHeaderBtn" onclick="openStopListModal()" class="h-10 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-[13px] font-bold border border-rose-500/30 transition flex items-center gap-1.5">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span>Стоп</span>
+                        <span id="stopListBadge" class="hidden bg-rose-500 text-white text-[11px] font-extrabold px-1.5 py-px rounded-full">0</span>
                     </button>
-                    <button id="editModeBtn" onclick="toggleEditMode()" aria-label="Редактировать схему зала" title="Схема зала" class="h-10 w-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition flex items-center justify-center">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <button id="editModeBtn" onclick="toggleEditMode()" aria-label="Редактировать схему зала" class="h-10 px-3 rounded-xl bg-slate-800 text-slate-200 text-[13px] font-semibold border border-slate-700 transition flex items-center gap-1.5">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Схема</span>
                     </button>
                 </div>
             </div>
@@ -94,19 +98,19 @@
         <!-- КАРТА ЗАЛА -->
         <main class="flex-1 relative overflow-hidden p-2 sm:p-4 flex items-center justify-center bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px]">
             <div id="floorMap" class="relative w-full h-full max-w-2xl max-h-[780px] bg-slate-900/60 border border-slate-800/80 rounded-3xl shadow-2xl overflow-hidden">
-                <div class="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest text-slate-600 font-semibold pointer-events-none">Верхний ряд</div>
-                <div class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] uppercase tracking-widest text-slate-600 font-semibold pointer-events-none">Вход / Нижний ряд</div>
+                <div class="absolute top-2 left-1/2 -translate-x-1/2 text-[11px] uppercase tracking-widest text-slate-500 font-semibold pointer-events-none">Верхний ряд</div>
+                <div class="absolute bottom-2 left-1/2 -translate-x-1/2 text-[11px] uppercase tracking-widest text-slate-500 font-semibold pointer-events-none">Вход / Нижний ряд</div>
                 <div id="tablesContainer" class="w-full h-full relative"></div>
             </div>
         </main>
 
         <!-- НИЖНЯЯ СТРОКА РЕЖИМА -->
-        <div id="ordersBar" class="bg-slate-900 border-t border-slate-800 px-4 py-2.5 shrink-0 flex items-center justify-between text-xs text-slate-400">
-            <div class="flex items-center gap-3">
+        <div id="ordersBar" class="bg-slate-900 border-t border-slate-800 px-4 py-2.5 shrink-0 flex items-center justify-center text-[13px] text-slate-400">
+            <div class="flex items-center gap-5">
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Не вбито</span>
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Вбито в POS</span>
             </div>
-            <span id="activeOrdersCount" class="font-bold text-slate-300">Активных: 0</span>
+            <span id="activeOrdersCount" class="hidden"></span>
         </div>
         <div id="servingBar" class="hidden bg-slate-900 border-t border-slate-800 px-3 py-2 shrink-0 flex gap-2">
             <button onclick="openSummaryModal()" class="flex-1 h-12 bg-amber-500 active:bg-amber-600 text-slate-950 font-bold rounded-2xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 text-sm transition">
@@ -121,12 +125,12 @@
 
         <!-- ВКЛАДКИ: ЗАКАЗЫ / СЕРВИРОВКА -->
         <nav class="bg-slate-950 border-t border-slate-800 shrink-0 grid grid-cols-2" style="padding-bottom: env(safe-area-inset-bottom);">
-            <button id="tabOrders" onclick="setMode('orders')" class="h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition">
-                <span class="relative text-lg leading-none">📝<span id="tabOrdersBadge" class="hidden absolute -top-1.5 -right-3 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[9px] font-extrabold flex items-center justify-center"></span></span>
+            <button id="tabOrders" onclick="setMode('orders')" class="h-16 flex flex-col items-center justify-center gap-1 text-xs font-bold transition">
+                <span class="relative"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg><span id="tabOrdersBadge" class="hidden absolute -top-1.5 -right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-950 text-[11px] font-extrabold flex items-center justify-center"></span></span>
                 <span>Заказы</span>
             </button>
-            <button id="tabServing" onclick="setMode('serving')" class="h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition">
-                <span class="relative text-lg leading-none">🍽️<span id="tabServingBadge" class="hidden absolute -top-1.5 -right-3 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[9px] font-extrabold flex items-center justify-center"></span></span>
+            <button id="tabServing" onclick="setMode('serving')" class="h-16 flex flex-col items-center justify-center gap-1 text-xs font-bold transition">
+                <span class="relative"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18M5 18a7 7 0 0 1 14 0M12 9V7.5M10.5 7.5h3"/><path d="M4 21h16"/></svg><span id="tabServingBadge" class="hidden absolute -top-1.5 -right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-950 text-[11px] font-extrabold flex items-center justify-center"></span></span>
                 <span>Сервировка</span>
             </button>
         </nav>
@@ -134,38 +138,40 @@
         <!-- ЭКРАН ЗАКАЗА ПО СТОЛУ -->
         <div id="orderScreen" class="fixed inset-0 bg-slate-950 z-30 hidden flex flex-col">
             <div class="bg-slate-900 border-b border-slate-800 shrink-0 top-safe">
-                <div class="px-3 h-14 flex items-center gap-2">
-                    <button onclick="openRenameModal()" class="shrink-0" aria-label="Сменить номер стола">
-                        <span id="orderTableBadge" class="inline-block min-w-[2.25rem] text-center px-2 py-1 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-base">9</span>
-                    </button>
+                <div class="px-3 h-14 flex items-center gap-2.5">
+                    <span id="orderTableBadge" class="min-w-[2.5rem] h-10 px-2 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-lg flex items-center justify-center shrink-0">9</span>
                     <div class="min-w-0 flex-1">
-                        <button onclick="openRenameModal()" class="block max-w-full text-left">
-                            <h2 id="orderTableTitle" class="font-bold text-sm text-white truncate">Стол №9 <span class="text-slate-500">✎</span></h2>
-                        </button>
-                        <button id="orderGuestsSubtitle" onclick="openGuestCountEdit()" class="block text-[11px] text-slate-400 text-left">Гостей: 2 ✎</button>
+                        <h2 id="orderTableTitle" class="font-bold text-base text-white truncate leading-tight">Стол №9</h2>
+                        <p id="orderGuestsSubtitle" class="text-[13px] text-slate-400 leading-tight">Гостей: 2</p>
                     </div>
-                    <button onclick="copyOrder()" class="shrink-0 w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-base flex items-center justify-center" aria-label="Скопировать заказ" title="Скопировать заказ">📋</button>
-                    <button onclick="confirmClearTableOrder()" class="shrink-0 h-10 px-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 text-xs font-bold">Закрыть стол</button>
+                    <button onclick="openTableMenu()" class="shrink-0 w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 flex items-center justify-center" aria-label="Действия со столом"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18.5" cy="12" r="1.2" fill="currentColor"/></svg></button>
                 </div>
             </div>
 
             <!-- ГОСТИ -->
             <div class="bg-slate-900/80 border-b border-slate-800 px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
                 <div id="guestTabsContainer" class="flex items-center gap-1.5 shrink-0"></div>
-                <button onclick="addGuestToTable()" class="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold shrink-0">+ Гость</button>
-                <button id="tabAllGuests" onclick="selectGuestTab('all')" class="ml-auto h-9 px-3 rounded-xl text-xs font-bold shrink-0 transition">Весь стол</button>
+                <button onclick="addGuestToTable()" class="h-10 px-3 rounded-xl bg-slate-800 text-slate-300 border border-dashed border-slate-600 text-[13px] font-bold shrink-0">+ Гость</button>
+                <button id="tabAllGuests" onclick="selectGuestTab('all')" class="ml-auto h-10 px-3 rounded-xl text-[13px] font-bold shrink-0 transition">Весь стол</button>
             </div>
 
-            <!-- ТЕКУЩИЙ ЗАКАЗ -->
-            <div id="currentOrderBox" class="bg-slate-900/50 border-b border-slate-800 max-h-[34%] overflow-y-auto no-scrollbar px-3 py-2 shrink-0"></div>
+            <!-- ТЕКУЩИЙ ЗАКАЗ (сворачивается в одну строку) -->
+            <div id="orderPanel" class="bg-emerald-500/[0.07] border-b-2 border-emerald-500/30 shrink-0 max-h-[38%] flex flex-col">
+                <button id="orderPanelHead" onclick="toggleOrderPanel()" class="w-full shrink-0 px-3 h-11 flex items-center gap-2 text-left">
+                    <span class="text-emerald-400"><svg class="chev w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+                    <span id="orderPanelTitle" class="text-[13px] font-extrabold uppercase tracking-wide text-emerald-300 shrink-0">Заказ</span>
+                    <span id="orderPanelSummary" class="text-[13px] text-slate-300 truncate flex-1 min-w-0"></span>
+                </button>
+                <div id="currentOrderBox" class="overflow-y-auto no-scrollbar px-3 pb-2 min-h-0"></div>
+            </div>
 
             <!-- ПОИСК, КУХНЯ / БАР, КАТЕГОРИИ -->
             <div class="bg-slate-950 px-3 pt-2.5 pb-2 border-b border-slate-800/80 shrink-0 space-y-2">
                 <div class="flex gap-2">
                     <div class="relative flex-1">
-                        <input id="menuSearchInput" type="search" enterkeyhint="search" autocomplete="off" oninput="onSearchMenu(this.value)" placeholder="Поиск блюда или напитка..." class="w-full h-10 bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-9 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 [&::-webkit-search-cancel-button]:hidden">
-                        <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none">🔍</span>
-                        <button id="clearSearchBtn" onclick="clearMenuSearch()" class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 text-slate-400 text-sm" aria-label="Очистить поиск">✕</button>
+                        <input id="menuSearchInput" type="search" enterkeyhint="search" autocomplete="off" oninput="onSearchMenu(this.value)" placeholder="Поиск блюда или напитка..." class="w-full h-11 bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-10 text-[15px] text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 [&::-webkit-search-cancel-button]:hidden">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg></span>
+                        <button id="clearSearchBtn" onclick="clearMenuSearch()" class="hidden absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 text-slate-300 text-base" aria-label="Очистить поиск">✕</button>
                     </div>
                     <div class="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800 shrink-0">
                         <button id="btnGroupKitchen" onclick="switchMenuGroup('kitchen')" class="px-3 rounded-lg text-xs font-bold transition">Кухня</button>
@@ -176,12 +182,24 @@
             </div>
 
             <!-- СПИСОК БЛЮД -->
-            <div id="menuItemsList" class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2"></div>
+            <div id="menuItemsList" class="flex-1 overflow-y-auto no-scrollbar px-3 py-2.5 space-y-1.5"></div>
 
             <!-- НИЖНЯЯ ПАНЕЛЬ: POS -->
             <div id="posBar" class="bg-slate-900 border-t border-slate-800 px-3 pt-2.5 bottom-safe flex items-center justify-between gap-2 shrink-0">
-                <button id="togglePosSyncedBtn" onclick="toggleTablePosSynced()" class="flex-1 h-11 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition"></button>
-                <button onclick="closeOrderScreen()" class="h-11 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs">На карту</button>
+                <button id="togglePosSyncedBtn" onclick="toggleTablePosSynced()" class="flex-1 h-12 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition"></button>
+                <button onclick="closeOrderScreen()" class="h-12 px-4 rounded-xl bg-slate-800 text-white font-bold text-sm flex items-center gap-2"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2-6-2z"/><path d="M9 4.5v13M15 6.5v13"/></svg>На карту</button>
+            </div>
+        </div>
+
+        <!-- ОКНО: ДЕЙСТВИЯ СО СТОЛОМ (⋯) -->
+        <div id="tableMenuModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 hidden flex items-end justify-center">
+            <div class="bg-slate-900 border-t border-slate-700 w-full max-w-md rounded-t-3xl px-3 pt-2 bottom-safe shadow-2xl">
+                <div class="w-10 h-1 rounded-full bg-slate-700 mx-auto mb-2"></div>
+                <button onclick="closeTableMenu(); copyOrder()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg></span>Скопировать заказ</button>
+                <button onclick="closeTableMenu(); openRenameModal()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5l4 4L9 19H5v-4z"/><path d="M13.5 6.5l4 4"/></svg></span>Номер стола</button>
+                <button onclick="closeTableMenu(); openGuestCountEdit()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-semibold text-slate-100 active:bg-slate-800"><span class="text-slate-400"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8.5" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 5.2a3.5 3.5 0 0 1 0 6.6M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg></span><span id="tableMenuGuests">Число гостей</span></button>
+                <div class="h-px bg-slate-800 my-1.5 mx-3"></div>
+                <button onclick="closeTableMenu(); confirmClearTableOrder()" class="w-full h-14 px-3 rounded-2xl flex items-center gap-3.5 text-[15px] font-bold text-rose-400 active:bg-rose-500/10"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4H6.5A1.5 1.5 0 0 0 5 5.5v13A1.5 1.5 0 0 0 6.5 20H14"/><path d="M10 12h10M17 9l3 3-3 3"/></svg>Закрыть стол (гости ушли)</button>
             </div>
         </div>
 
@@ -210,7 +228,7 @@
             <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl">
                 <div class="flex items-start justify-between gap-2 mb-3">
                     <div class="min-w-0">
-                        <span id="modCategoryTag" class="text-[10px] uppercase tracking-wider font-bold text-emerald-400">Опция</span>
+                        <span id="modCategoryTag" class="text-[11px] uppercase tracking-wider font-bold text-emerald-400">Опция</span>
                         <h3 id="modItemName" class="text-base font-extrabold text-white leading-snug mt-0.5">Название блюда</h3>
                     </div>
                     <button onclick="closeModifierModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
@@ -227,7 +245,7 @@
             <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl">
                 <div class="flex items-start justify-between gap-2 mb-3">
                     <div class="min-w-0">
-                        <span class="text-[10px] uppercase tracking-wider font-bold text-amber-400">Позиция в заказе</span>
+                        <span class="text-[11px] uppercase tracking-wider font-bold text-amber-400">Позиция в заказе</span>
                         <h3 id="itemSheetName" class="text-base font-extrabold text-white leading-snug mt-0.5"></h3>
                         <div id="itemSheetOption" class="text-xs text-emerald-300 font-semibold mt-0.5"></div>
                     </div>
@@ -316,7 +334,7 @@
             <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl max-h-[92%] flex flex-col">
                 <div class="flex items-start justify-between gap-2 mb-3 shrink-0">
                     <div>
-                        <h3 class="text-base font-extrabold text-white">🚫 Стоп-лист</h3>
+                        <h3 class="text-base font-extrabold text-white flex items-center gap-2"><span class="text-rose-400"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span>Стоп-лист</h3>
                         <p class="text-xs text-slate-400 leading-snug">Вставь текст из рабочего чата как есть — разберу опечатки, сокращения и списки через запятую. Одну позицию можно поставить на стоп, зажав её в меню.</p>
                     </div>
                     <button onclick="closeStopListModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
@@ -324,7 +342,7 @@
                 <div class="overflow-y-auto no-scrollbar flex-1 min-h-0">
                     <textarea id="stopListInput" rows="5" placeholder="Вставь сюда стоп-лист из чата:&#10;❌ Гороховый суп&#10;нет бивины&#10;пепси закончилась..." class="w-full bg-slate-950 border border-slate-700 rounded-2xl p-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 mb-2.5"></textarea>
                     <div class="flex gap-2 mb-3">
-                        <button id="pasteStopBtn" onclick="pasteStopFromClipboard()" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700">📋 Вставить</button>
+                        <button id="pasteStopBtn" onclick="pasteStopFromClipboard()" class="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs border border-slate-700"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="12" rx="2"/><path d="M15.5 8.5V5.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>Вставить</button>
                         <button id="applyStopBtn" onclick="applyStopListFromText()" class="flex-1 py-2.5 px-3 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-extrabold text-xs shadow-lg shadow-rose-500/20 transition flex items-center justify-center gap-2">Загрузить стоп-лист</button>
                     </div>
                     <div id="stopResult" class="hidden mb-3"></div>
@@ -575,7 +593,7 @@
         const SERVE_ITEMS = [
             ['sugar', 'Сахар'], ['toothpicks', 'Зубочистки'], ['tomato_sauce', 'Соус томатный'], ['hot_sauce', 'Соус острый'],
             ['salt', 'Соль'], ['pepper', 'Перец'], ['dry_napkins', 'Салфетки сухие'], ['wet_napkins', 'Салфетки влажные']
-        ].map(([id, name]) => ({ id, name, icon: serveIcon(id, 'w-7 h-7'), miniIcon: serveIcon(id, 'w-3.5 h-3.5') }));
+        ].map(([id, name]) => ({ id, name, icon: serveIcon(id, 'w-7 h-7'), miniIcon: serveIcon(id, 'w-4 h-4') }));
         const SERVE_ITEM_IDS = new Set(SERVE_ITEMS.map(i => i.id));
 
         // ==========================================
@@ -628,6 +646,13 @@
         let sheetItemUid = null;
 
         const LS_KEY = 'waiter_state_v2';
+        // Линейные иконки для разметки, которую рисует JS
+        const ICON = {
+            note: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z"/><path d="M8 10h8M8 13h5"/></svg>',
+            plus: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+            minus: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>',
+            person: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>'
+        };
         const $ = id => document.getElementById(id);
         const activeTable = () => state.tables.find(t => t.id === activeTableId);
         const isOpen = id => !$(id).classList.contains('hidden');
@@ -763,7 +788,7 @@
         function elapsedLabel(since) {
             if (!since) return '';
             const m = Math.max(0, Math.floor((Date.now() - since) / 60000));
-            if (m < 1) return 'сейчас';
+            if (m < 1) return '';
             if (m < 60) return `${m}м`;
             return `${Math.floor(m / 60)}ч${String(m % 60).padStart(2, '0')}`;
         }
@@ -787,20 +812,20 @@
                 el.style.top = `${table.y}%`;
                 el.style.transform = 'translate(-50%, -50%)';
 
-                let cls = 'table-node absolute w-[16%] min-w-[54px] max-w-[78px] aspect-[4/4.4] rounded-2xl flex flex-col items-center justify-center cursor-pointer border-2 shadow-lg ';
+                let cls = 'table-node absolute w-[17%] min-w-[60px] max-w-[92px] aspect-[4/4.4] rounded-2xl flex flex-col items-center justify-center cursor-pointer border-2 shadow-lg ';
                 let badge = '', sub = '';
                 if (isEditMode) {
                     cls += 'bg-indigo-950/90 border-indigo-400 text-white cursor-move ring-2 ring-indigo-500/30';
-                    sub = `<span class="text-[9px] text-indigo-300 mt-0.5">✥</span>`;
+                    sub = `<span class="text-[11px] text-indigo-300 mt-0.5">✥</span>`;
                 } else if (serving) {
                     if (missing) {
                         cls += 'bg-amber-500/20 border-amber-400 text-white needs-attention';
                         badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-slate-950 font-extrabold text-[11px] flex items-center justify-center shadow">${missing}</div>`;
                         const icons = table.missing.slice(0, 4).map(id => `<span class="inline-flex items-center justify-center">${SERVE_ITEMS.find(i => i.id === id).miniIcon}</span>`).join('');
-                        sub = `<div class="flex items-center justify-center flex-wrap gap-0.5 mt-1 px-1 text-[11px] leading-none">${icons}${missing > 4 ? `<span class="text-[9px] font-bold text-amber-300">+${missing - 4}</span>` : ''}</div>`;
+                        sub = `<div class="flex items-center justify-center flex-wrap gap-0.5 mt-1 px-1 text-[11px] leading-none">${icons}${missing > 4 ? `<span class="text-[11px] font-bold text-amber-300">+${missing - 4}</span>` : ''}</div>`;
                     } else {
                         cls += 'bg-slate-800/85 border-slate-700/90 text-slate-200';
-                        if (table.label === '?') sub = `<span class="text-[9px] text-slate-400 mt-0.5">новый</span>`;
+                        if (table.label === '?') sub = `<span class="text-[11px] text-slate-400 mt-0.5">новый</span>`;
                     }
                 } else {
                     if (hasOrder && !table.posSynced) cls += 'bg-amber-500/20 border-amber-400 text-white';
@@ -812,11 +837,11 @@
                     }
                     if (hasOrder) {
                         const time = elapsedLabel(table.openedAt);
-                        sub = `<span class="text-[9px] font-semibold mt-0.5 ${table.posSynced ? 'text-emerald-300' : 'text-amber-300'}">👤${table.guestCount || 1}${time ? ' · ' + time : ''}</span>`;
-                    } else if (table.label === '?') sub = `<span class="text-[9px] text-slate-400 mt-0.5">новый</span>`;
+                        sub = `<span class="text-[11px] font-bold mt-1 flex items-center gap-0.5 ${table.posSynced ? 'text-emerald-300' : 'text-amber-200'}">${ICON.person}${table.guestCount || 1}${time ? '<span class="opacity-60 mx-0.5">·</span>' + time : ''}</span>`;
+                    } else if (table.label === '?') sub = `<span class="text-[11px] text-slate-400 mt-0.5">новый</span>`;
                 }
                 el.className = cls;
-                el.innerHTML = `${badge}<span class="font-extrabold text-base sm:text-lg leading-none max-w-full px-1 truncate">${esc(table.label)}</span>${sub}`;
+                el.innerHTML = `${badge}<span class="font-extrabold text-xl leading-none max-w-full px-1 truncate">${esc(table.label)}</span>${sub}`;
                 bindTableNode(el, table);
                 container.appendChild(el);
             });
@@ -827,13 +852,20 @@
             setTabBadge('tabOrdersBadge', unsynced);
             setTabBadge('tabServingBadge', needTables);
 
-            $('headerTitle').textContent = serving ? 'Сервировка зала' : 'Приём заказов';
+            $('headerTitle').textContent = serving ? 'Сервировка' : 'Заказы';
             $('stopHeaderBtn').classList.toggle('hidden', serving);
             const sub = $('headerSubtitle');
             if (isEditMode) sub.textContent = 'Редактирование схемы';
-            else if (serving) sub.textContent = needTables ? `Пополнить: ${needTables} ст. (${needTotal} поз.)` : 'Все столы укомплектованы';
-            else sub.textContent = activeCount > 0 ? `В работе столов: ${activeCount}` : 'Нажми на стол, чтобы принять заказ';
-            sub.className = `text-xs truncate ${serving && needTables && !isEditMode ? 'text-amber-400 font-medium' : 'text-slate-400'}`;
+            else if (serving) sub.textContent = needTables ? `Пополнить ${needTables} ${plural(needTables, 'стол', 'стола', 'столов')} · ${needTotal} поз.` : 'Все столы укомплектованы';
+            else sub.textContent = activeCount > 0 ? `${activeCount} в работе${unsynced ? ` · ${unsynced} не ${plural(unsynced, 'вбит', 'вбиты', 'вбиты')}` : ''}` : 'Нажми на стол';
+            sub.className = `font-bold text-[15px] leading-tight truncate ${!isEditMode && ((serving && needTables) || (!serving && unsynced)) ? 'text-amber-300' : 'text-white'}`;
+        }
+
+        function plural(n, one, few, many) {
+            const m10 = n % 10, m100 = n % 100;
+            if (m10 === 1 && m100 !== 11) return one;
+            if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few;
+            return many;
         }
 
         function setTabBadge(id, n) {
@@ -864,7 +896,7 @@
             const serving = appMode() === 'serving';
             $('ordersBar').classList.toggle('hidden', serving);
             $('servingBar').classList.toggle('hidden', !serving);
-            const base = 'h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition ';
+            const base = 'h-16 flex flex-col items-center justify-center gap-1 text-xs font-bold transition ';
             $('tabOrders').className = base + (serving ? 'text-slate-500' : 'text-white bg-emerald-500/10 shadow-[inset_0_2px_0_#10b981]');
             $('tabServing').className = base + (serving ? 'text-white bg-amber-500/10 shadow-[inset_0_2px_0_#f59e0b]' : 'text-slate-500');
         }
@@ -910,8 +942,8 @@
         function toggleEditMode() {
             isEditMode = !isEditMode;
             $('editModeBtn').className = isEditMode
-                ? 'h-10 w-10 rounded-xl bg-indigo-600 text-white border border-indigo-400 transition flex items-center justify-center'
-                : 'h-10 w-10 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center justify-center';
+                ? 'h-10 px-3 rounded-xl bg-indigo-600 text-white text-[13px] font-semibold border border-indigo-400 transition flex items-center gap-1.5'
+                : 'h-10 px-3 rounded-xl bg-slate-800 text-slate-200 text-[13px] font-semibold border border-slate-700 transition flex items-center gap-1.5';
             $('editBanner').classList.toggle('hidden', !isEditMode);
             $('floorMap').classList.toggle('editor-grid', isEditMode);
             if (!isEditMode) showToast('Схема сохранена');
@@ -1035,8 +1067,9 @@
             const table = activeTable();
             if (!table) return;
             $('orderTableBadge').textContent = table.label;
-            $('orderTableTitle').innerHTML = `${esc(table.label === '?' ? 'Новый столик' : 'Стол №' + table.label)} <span class="text-slate-500">✎</span>`;
-            $('orderGuestsSubtitle').textContent = `Гостей: ${table.guestCount} ✎`;
+            $('orderTableTitle').textContent = table.label === '?' ? 'Новый столик' : `Стол №${table.label}`;
+            const time = elapsedLabel(table.openedAt);
+            $('orderGuestsSubtitle').textContent = `${table.guestCount} ${plural(table.guestCount, 'гость', 'гостя', 'гостей')}${time ? ` · открыт ${time} назад` : ''}`;
             renderGuestTabs(table);
             renderCurrentOrderBox(table);
             renderCategoriesBar();
@@ -1052,9 +1085,9 @@
                 const active = currentGuestTab === g;
                 const btn = document.createElement('button');
                 btn.className = active
-                    ? 'h-9 px-3 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-xs shrink-0 shadow flex items-center gap-1.5 transition'
-                    : 'h-9 px-3 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs shrink-0 flex items-center gap-1.5 transition';
-                const badge = count > 0 ? `<span class="px-1.5 py-px rounded-full text-[10px] font-extrabold ${active ? 'bg-slate-950 text-emerald-400' : 'bg-slate-700 text-white'}">${count}</span>` : '';
+                    ? 'h-10 px-3.5 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-[13px] shrink-0 shadow flex items-center gap-1.5 transition'
+                    : 'h-10 px-3.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-[13px] shrink-0 flex items-center gap-1.5 transition';
+                const badge = count > 0 ? `<span class="px-1.5 py-px rounded-full text-[11px] font-extrabold ${active ? 'bg-slate-950 text-emerald-400' : 'bg-slate-700 text-white'}">${count}</span>` : '';
                 btn.innerHTML = `<span>Гость ${g}</span>${badge}`;
                 btn.onclick = () => selectGuestTab(g);
                 container.appendChild(btn);
@@ -1063,8 +1096,8 @@
             const allBtn = $('tabAllGuests');
             allBtn.textContent = total > 0 ? `Весь стол (${total})` : 'Весь стол';
             allBtn.className = currentGuestTab === 'all'
-                ? 'ml-auto h-9 px-3 rounded-xl bg-amber-500 text-slate-950 text-xs font-extrabold shrink-0 transition'
-                : 'ml-auto h-9 px-3 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold shrink-0 transition';
+                ? 'ml-auto h-10 px-3 rounded-xl bg-amber-500 text-slate-950 text-[13px] font-extrabold shrink-0 transition'
+                : 'ml-auto h-10 px-3 rounded-xl bg-slate-800 text-slate-300 text-[13px] font-bold shrink-0 transition';
         }
 
         function selectGuestTab(tab) {
@@ -1074,6 +1107,7 @@
             if (typeof tab === 'number') { table.activeGuest = tab; saveState(); }
             renderGuestTabs(table);
             renderCurrentOrderBox(table);
+            renderMenuItemsList();
             updateModConfirm();
         }
 
@@ -1088,12 +1122,41 @@
             showToast(`Добавлен Гость ${table.guestCount}`);
         }
 
+        let orderCollapsed = false;
+        try { orderCollapsed = localStorage.getItem('waiter_order_collapsed') === '1'; } catch (e) {}
+
+        function toggleOrderPanel() {
+            orderCollapsed = !orderCollapsed;
+            try { localStorage.setItem('waiter_order_collapsed', orderCollapsed ? '1' : '0'); } catch (e) {}
+            const table = activeTable();
+            if (table) renderCurrentOrderBox(table);
+        }
+
+        function renderOrderPanelHead(table) {
+            const all = currentGuestTab === 'all';
+            const items = all ? table.items : table.items.filter(i => i.guest === currentGuestTab);
+            const qty = items.reduce((s, i) => s + i.qty, 0);
+            $('orderPanelTitle').textContent = all ? 'Весь стол' : `Гость ${currentGuestTab}`;
+            const summary = $('orderPanelSummary');
+            if (!qty) {
+                summary.textContent = 'пока пусто — добавляй из меню ниже';
+                summary.className = 'text-[13px] text-slate-400 truncate flex-1 min-w-0';
+            } else {
+                const names = items.map(i => i.qty > 1 ? `${i.name} ×${i.qty}` : i.name).join(', ');
+                summary.textContent = orderCollapsed ? `${qty} поз.: ${names}` : `${qty} поз.`;
+                summary.className = 'text-[13px] text-slate-200 font-semibold truncate flex-1 min-w-0';
+            }
+            const panel = $('orderPanel');
+            panel.classList.toggle('collapsed', orderCollapsed || !qty);
+            $('orderPanelHead').setAttribute('aria-expanded', String(!orderCollapsed));
+        }
+
         function renderCurrentOrderBox(table) {
+            renderOrderPanelHead(table);
             const box = $('currentOrderBox');
             box.innerHTML = '';
             if (currentGuestTab === 'all') {
                 if (table.items.length === 0) {
-                    box.innerHTML = `<div class="text-center py-3 text-xs text-slate-500">Заказ по столу пока пуст</div>`;
                     return;
                 }
                 for (let g = 1; g <= table.guestCount; g++) {
@@ -1101,36 +1164,33 @@
                     if (!items.length) continue;
                     const section = document.createElement('div');
                     section.className = 'mb-2 last:mb-0';
-                    section.innerHTML = `<div class="text-[11px] font-extrabold text-amber-400 uppercase tracking-wider mb-1">👤 Гость ${g}</div>`;
+                    section.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1">${ICON.person} Гость ${g}</div>`;
                     items.forEach(item => section.appendChild(createOrderLineElement(table, item)));
                     box.appendChild(section);
                 }
                 return;
             }
             const items = table.items.filter(i => i.guest === currentGuestTab);
-            if (!items.length) {
-                box.innerHTML = `<div class="text-center py-2.5 text-xs text-slate-500">Гость ${currentGuestTab}: выбери блюда из меню ниже 👇</div>`;
-                return;
-            }
+            if (!items.length) return;
             items.forEach(item => box.appendChild(createOrderLineElement(table, item)));
         }
 
         function createOrderLineElement(table, item) {
             const row = document.createElement('div');
-            row.className = 'flex items-center justify-between gap-2 py-1.5 pl-2.5 pr-1.5 mb-1 rounded-xl bg-slate-800/90 border border-slate-700/70';
+            row.className = 'flex items-center justify-between gap-2 py-1.5 pl-3 pr-1.5 mb-1.5 rounded-xl bg-slate-800 border border-emerald-500/20';
             const badges = [];
-            if (item.option) badges.push(`<span class="inline-block bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded-md">${esc(item.option)}</span>`);
-            if (item.note) badges.push(`<span class="inline-block bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-1.5 py-0.5 rounded-md">💬 ${esc(item.note)}</span>`);
+            if (item.option) badges.push(`<span class="inline-block bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold px-1.5 py-0.5 rounded-md">${esc(item.option)}</span>`);
+            if (item.note) badges.push(`<span class="inline-block bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold px-1.5 py-0.5 rounded-md">«${esc(item.note)}»</span>`);
             const stopped = stopSet.has(item.name);
             row.innerHTML = `
                 <button class="line-open flex-1 min-w-0 text-left py-0.5">
-                    <div class="text-xs font-bold ${stopped ? 'text-rose-300' : 'text-white'} leading-tight">${esc(item.name)}${stopped ? ' <span class="text-[10px] text-rose-400">· на стопе</span>' : ''}</div>
+                    <div class="text-sm font-bold ${stopped ? 'text-rose-300' : 'text-white'} leading-snug">${esc(item.name)}${stopped ? ' <span class="text-xs text-rose-400">· на стопе</span>' : ''}</div>
                     ${badges.length ? `<div class="flex flex-wrap gap-1 mt-1">${badges.join('')}</div>` : ''}
                 </button>
                 <div class="flex items-center gap-1 shrink-0">
-                    <button class="btn-dec w-9 h-9 rounded-lg bg-slate-700 active:bg-slate-600 text-white font-bold text-base flex items-center justify-center" aria-label="Меньше">−</button>
-                    <span class="w-6 text-center text-sm font-extrabold text-white">${item.qty}</span>
-                    <button class="btn-inc w-9 h-9 rounded-lg bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-base flex items-center justify-center" aria-label="Больше">+</button>
+                    <button class="btn-dec w-10 h-10 rounded-lg bg-slate-700 active:bg-slate-600 text-white flex items-center justify-center" aria-label="Меньше">${ICON.minus}</button>
+                    <span class="w-6 text-center text-base font-extrabold text-white">${item.qty}</span>
+                    <button class="btn-inc w-10 h-10 rounded-lg bg-emerald-500/20 active:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 flex items-center justify-center" aria-label="Больше">${ICON.plus}</button>
                 </div>`;
             row.querySelector('.line-open').onclick = () => openItemSheet(item.uid);
             row.querySelector('.btn-dec').onclick = () => {
@@ -1241,8 +1301,8 @@
         // МЕНЮ: группы, категории, поиск
         // ==========================================
         function renderGroupSwitch() {
-            const on = 'px-3 rounded-lg text-xs font-bold text-slate-950 transition';
-            const off = 'px-3 rounded-lg text-xs font-bold text-slate-400 transition';
+            const on = 'px-3.5 rounded-lg text-[13px] font-bold text-slate-950 transition';
+            const off = 'px-3.5 rounded-lg text-[13px] font-bold text-slate-400 transition';
             $('btnGroupKitchen').className = currentMenuGroup === 'kitchen' ? on + ' bg-emerald-500' : off;
             $('btnGroupBar').className = currentMenuGroup === 'bar' ? on + ' bg-sky-500' : off;
         }
@@ -1262,7 +1322,7 @@
             const bar = $('categoriesBar');
             bar.innerHTML = '';
             if (searchQuery.trim()) {
-                bar.innerHTML = `<span class="text-[11px] text-emerald-400 font-semibold py-1.5">Поиск по всему меню</span>`;
+                bar.innerHTML = `<span class="text-[13px] text-emerald-400 font-semibold py-2">Поиск по всему меню</span>`;
                 return;
             }
             MENU_CATEGORIES.filter(c => c.group === currentMenuGroup).forEach(cat => {
@@ -1270,8 +1330,8 @@
                 const stopped = cat.items.filter(i => stopSet.has(i.name)).length;
                 const btn = document.createElement('button');
                 btn.className = active
-                    ? 'h-8 px-3 rounded-xl bg-slate-200 text-slate-950 font-extrabold text-xs shrink-0 transition'
-                    : 'h-8 px-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 font-semibold text-xs shrink-0 transition';
+                    ? 'h-9 px-3.5 rounded-xl bg-slate-100 text-slate-950 font-extrabold text-[13px] shrink-0 transition'
+                    : 'h-9 px-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-semibold text-[13px] shrink-0 transition';
                 btn.innerHTML = `${esc(cat.title)}${stopped ? ` <span class="text-rose-400">·${stopped}</span>` : ''}`;
                 btn.onclick = () => {
                     currentCategoryId = cat.id;
@@ -1329,36 +1389,40 @@
             const items = searching ? searchMenu(searchQuery) : (MENU_CATEGORIES.find(c => c.id === currentCategoryId)?.items || []);
 
             if (!items.length) {
-                container.innerHTML = `<div class="text-center py-8 text-xs text-slate-500">Ничего не найдено</div>`;
+                container.innerHTML = `<div class="text-center py-8 text-sm text-slate-400">Ничего не найдено</div>`;
                 return;
             }
             const guestLabel = typeof currentGuestTab === 'number' ? currentGuestTab : 1;
 
+            const table = activeTable();
+            const inOrder = new Map();
+            (table ? table.items : []).forEach(it => {
+                if (currentGuestTab === 'all' || it.guest === currentGuestTab) inOrder.set(it.name, (inOrder.get(it.name) || 0) + it.qty);
+            });
+
             items.forEach(item => {
                 const stopped = stopSet.has(item.name);
+                const count = inOrder.get(item.name) || 0;
                 const card = document.createElement('div');
                 card.className = stopped
-                    ? 'press is-stopped p-3 rounded-2xl bg-slate-900/40 border border-rose-500/30 flex items-center justify-between gap-2 cursor-pointer'
-                    : 'press p-3 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-2 active:scale-[0.99] transition cursor-pointer';
+                    ? 'press is-stopped min-h-[56px] pl-3.5 pr-2 py-2 rounded-xl bg-slate-900/40 border border-rose-500/30 flex items-center gap-2 cursor-pointer'
+                    : `press min-h-[56px] pl-3.5 pr-2 py-2 rounded-xl ${count ? 'bg-emerald-500/[0.08] border border-emerald-500/40' : 'bg-slate-900 border border-slate-800'} flex items-center gap-2 active:scale-[0.99] transition cursor-pointer`;
 
                 let hint = '';
-                if (stopped) hint = `<span class="text-[10px] text-rose-400 font-extrabold">🚫 НА СТОПЕ · зажми, чтобы вернуть</span>`;
-                else if (item.mod && MOD_HINTS[item.mod]) hint = `<span class="text-[10px] ${MOD_HINTS[item.mod][0]} font-semibold">${MOD_HINTS[item.mod][1]}</span>`;
+                if (stopped) hint = `<span class="text-xs text-rose-400 font-bold">НА СТОПЕ · зажми, чтобы вернуть</span>`;
+                else if (item.mod && MOD_HINTS[item.mod]) hint = `<span class="text-xs ${MOD_HINTS[item.mod][0]} font-semibold">${MOD_HINTS[item.mod][1]}</span>`;
+                const meta = [searching ? `<span class="text-xs text-slate-400">${esc(item.catTitle)}</span>` : '', hint].filter(Boolean).join('');
 
                 card.innerHTML = `
                     <div class="flex-1 min-w-0 ${stopped ? 'opacity-60' : ''}">
-                        <div class="font-bold text-sm ${stopped ? 'line-through text-slate-400' : 'text-slate-100'} leading-snug">${esc(item.name)}</div>
-                        <div class="flex flex-wrap items-center gap-x-2 mt-0.5">
-                            ${searching ? `<span class="text-[10px] text-slate-500">${esc(item.catTitle)}</span>` : ''}
-                            ${hint}
-                        </div>
+                        <div class="font-semibold text-[15px] ${stopped ? 'line-through text-slate-400' : 'text-slate-50'} leading-snug">${esc(item.name)}</div>
+                        ${meta ? `<div class="flex flex-wrap items-center gap-x-2 mt-0.5">${meta}</div>` : ''}
                     </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        ${stopped
-                            ? `<span class="px-2 py-1 rounded-lg bg-rose-500/20 text-rose-400 border border-rose-500/30 font-extrabold text-[10px]">СТОП</span>`
-                            : `<button class="btn-note w-10 h-10 rounded-xl bg-slate-800 text-slate-400 text-sm flex items-center justify-center border border-slate-700" aria-label="Добавить с примечанием">💬</button>
-                               <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-extrabold text-lg flex items-center justify-center">+</div>`}
-                    </div>`;
+                    ${stopped
+                        ? `<span class="shrink-0 px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 font-extrabold text-xs">СТОП</span>`
+                        : `${count ? `<span class="shrink-0 min-w-[2rem] h-7 px-2 rounded-full bg-emerald-500 text-slate-950 font-extrabold text-sm flex items-center justify-center">×${count}</span>` : ''}
+                           <button class="btn-note shrink-0 w-10 h-10 rounded-xl text-slate-400 flex items-center justify-center" aria-label="Добавить с примечанием">${ICON.note}</button>
+                           <span class="shrink-0 w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center justify-center">${ICON.plus}</span>`}`;
 
                 bindPress(card, {
                     onTap: e => {
@@ -1376,7 +1440,7 @@
             });
 
             const tip = document.createElement('div');
-            tip.className = 'text-center text-[11px] text-slate-600 pt-2 pb-1';
+            tip.className = 'text-center text-xs text-slate-500 pt-2 pb-1';
             tip.textContent = `Добавляется гостю ${guestLabel} · зажми позицию, чтобы поставить на стоп`;
             container.appendChild(tip);
         }
@@ -1476,7 +1540,7 @@
                         ? 'mod-opt-btn p-3 rounded-2xl border border-rose-500/30 bg-slate-900 text-left font-bold text-sm text-slate-500 flex items-center justify-between'
                         : 'mod-opt-btn p-3 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between';
                     btn.innerHTML = blocked
-                        ? `<span class="line-through">${esc(opt)}</span><span class="text-[10px] text-rose-400 font-extrabold no-underline">СТОП</span>`
+                        ? `<span class="line-through">${esc(opt)}</span><span class="text-[11px] text-rose-400 font-extrabold no-underline">СТОП</span>`
                         : `<span>${esc(opt)}</span><span class="check-dot w-5 h-5 shrink-0 rounded-full border-2 border-slate-500"></span>`;
                     if (!blocked) {
                         available++;
@@ -1557,13 +1621,13 @@
         function renderPosSyncButton(table) {
             const btn = $('togglePosSyncedBtn');
             if (!table.items.length) {
-                btn.className = 'flex-1 h-11 px-3 rounded-xl bg-slate-800/50 text-slate-500 font-bold text-xs flex items-center justify-center gap-2 cursor-default';
+                btn.className = 'flex-1 h-12 px-3 rounded-xl bg-slate-800/50 text-slate-500 font-bold text-sm flex items-center justify-center gap-2 cursor-default';
                 btn.innerHTML = '<span>Заказ пуст</span>';
             } else if (table.posSynced) {
-                btn.className = 'flex-1 h-11 px-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 transition';
+                btn.className = 'flex-1 h-12 px-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-sm flex items-center justify-center gap-2 transition';
                 btn.innerHTML = '<span>✓ Вбито в POS</span>';
             } else {
-                btn.className = 'flex-1 h-11 px-3 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition';
+                btn.className = 'flex-1 h-12 px-3 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition';
                 btn.innerHTML = '<span>Отметить: вбил в POS</span>';
             }
         }
@@ -1620,8 +1684,16 @@
             const table = activeTable();
             if (!table) return;
             if (!table.items.length) { showToast('Заказ пуст'); return; }
-            showToast(await copyText(orderAsText(table)) ? 'Заказ скопирован 📋' : 'Не получилось скопировать');
+            showToast(await copyText(orderAsText(table)) ? 'Заказ скопирован ✓' : 'Не получилось скопировать');
         }
+
+        function openTableMenu() {
+            const table = activeTable();
+            if (!table) return;
+            $('tableMenuGuests').textContent = `Гостей: ${table.guestCount}`;
+            show('tableMenuModal');
+        }
+        function closeTableMenu() { hide('tableMenuModal'); }
 
         function confirmClearTableOrder() {
             const table = activeTable();
@@ -1967,7 +2039,7 @@
                 const row = document.createElement('div');
                 row.className = 'flex items-center justify-between gap-2 pl-3 pr-1.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/25';
                 row.innerHTML = `
-                    <span class="text-xs font-semibold text-rose-200 min-w-0">❌ ${esc(name)}${isExtra ? ' <span class="text-[10px] text-slate-400 font-normal">· продукт/добавка</span>' : ''}</span>
+                    <span class="text-xs font-semibold text-rose-200 min-w-0">❌ ${esc(name)}${isExtra ? ' <span class="text-[11px] text-slate-400 font-normal">· продукт/добавка</span>' : ''}</span>
                     <button class="shrink-0 h-8 text-[11px] font-bold text-slate-300 px-2.5 rounded-lg bg-slate-800">Вернуть</button>`;
                 row.querySelector('button').onclick = () => setItemStopped(name, false);
                 container.appendChild(row);
@@ -2024,7 +2096,7 @@
                     <span class="text-2xl shrink-0 w-7 h-7 flex items-center justify-center">${item.icon}</span>
                     <span class="flex-1 min-w-0">
                         <span class="block font-bold text-sm leading-tight">${esc(item.name)}</span>
-                        <span class="block text-[10px] mt-0.5 font-semibold ${missing ? 'text-rose-400' : 'text-slate-500'}">${missing ? '❌ Нет на столе' : 'На месте'}</span>
+                        <span class="block text-[11px] mt-0.5 font-semibold ${missing ? 'text-rose-400' : 'text-slate-500'}">${missing ? '❌ Нет на столе' : 'На месте'}</span>
                     </span>`;
                 btn.onclick = () => {
                     // Касание, которым открыли окно, не должно сразу отметить позицию
@@ -2194,7 +2266,7 @@
         // Нажатие на затемнённый фон закрывает окно
         [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
          ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal],
-         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal]]
+         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal], ['tableMenuModal', closeTableMenu]]
             .forEach(([id, fn]) => $(id).addEventListener('click', e => { if (e.target.id === id) fn(); }));
 
         // ==========================================
@@ -2203,6 +2275,7 @@
         /** Системная кнопка «Назад» в приложении: закрывает верхнее окно. false — закрывать нечего. */
         function handleBack() {
             if (isOpen('confirmModal')) { closeConfirmModal(); return true; }
+            if (isOpen('tableMenuModal')) { closeTableMenu(); return true; }
             if (isOpen('renameModal')) { closeRenameModal(); return true; }
             if (isOpen('itemSheet')) { saveItemSheet(); return true; }
             if (isOpen('modifierModal')) { closeModifierModal(); return true; }
