@@ -59,6 +59,11 @@
         #orderPanel.collapsed .chev { transform: rotate(-90deg); }
         .chev { transition: transform 0.2s ease; }
         /* «Весь стол»: только заказ на весь экран — удобно зачитать гостям */
+        /* Выдача: только список «что отнести», без меню, поиска и гостей */
+        #orderScreen.delivery-mode #guestsRow,
+        #orderScreen.delivery-mode #orderPanel,
+        #orderScreen.delivery-mode #menuControls,
+        #orderScreen.delivery-mode #menuItemsList { display: none; }
         #orderScreen.review-mode #menuControls,
         #orderScreen.review-mode #menuItemsList { display: none; }
         /* min-height: 0 — иначе блок растягивается по содержимому и список нельзя прокрутить */
@@ -158,8 +163,18 @@
                 </div>
             </div>
 
+            <!-- ВЫДАЧА: после «Вбил в POS» — отмечать, что уже отнёс -->
+            <div id="deliveryView" class="hidden flex-1 min-h-0 flex flex-col">
+                <div class="px-4 pt-3 pb-2 shrink-0 flex items-center justify-between gap-2">
+                    <div id="deliveryTitle" class="text-[15px] font-extrabold text-white">Отнести гостям</div>
+                    <div id="deliveryProgress" class="text-[13px] font-bold text-amber-300"></div>
+                </div>
+                <div class="px-4 pb-2 shrink-0"><div class="h-1.5 rounded-full bg-slate-800 overflow-hidden"><div id="deliveryBar" class="h-full bg-emerald-500 rounded-full transition-all" style="width:0%"></div></div></div>
+                <div id="deliveryList" class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-3 pb-4" style="overscroll-behavior: contain;"></div>
+            </div>
+
             <!-- ГОСТИ -->
-            <div class="bg-slate-900/80 border-b border-slate-800 px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            <div id="guestsRow" class="bg-slate-900/80 border-b border-slate-800 px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
                 <div id="guestTabsContainer" class="flex items-center gap-1.5 shrink-0"></div>
                 <button onclick="addGuestToTable()" class="h-10 px-3 rounded-xl bg-slate-800 text-slate-300 border border-dashed border-slate-600 text-[13px] font-bold shrink-0">+ Гость</button>
                 <button id="tabAllGuests" onclick="selectGuestTab('all')" class="ml-auto h-10 px-3 rounded-xl text-[13px] font-bold shrink-0 transition">Весь стол</button>
@@ -196,8 +211,9 @@
 
             <!-- НИЖНЯЯ ПАНЕЛЬ: POS -->
             <div id="posBar" class="bg-slate-900 border-t border-slate-800 px-3 pt-2.5 bottom-safe flex items-center justify-between gap-2 shrink-0">
+                <button id="reorderBtn" onclick="startReorder()" class="hidden h-12 px-3.5 rounded-xl bg-slate-800 border border-slate-600 text-white font-bold text-sm flex items-center gap-1.5 shrink-0"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Дозаказ</button>
                 <button id="togglePosSyncedBtn" onclick="toggleTablePosSynced()" class="flex-1 h-12 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition"></button>
-                <button onclick="closeOrderScreen()" class="h-12 px-4 rounded-xl bg-slate-800 text-white font-bold text-sm flex items-center gap-2"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2-6-2z"/><path d="M9 4.5v13M15 6.5v13"/></svg>На карту</button>
+                <button onclick="closeOrderScreen()" class="h-12 px-4 rounded-xl bg-slate-800 text-white font-bold text-sm flex items-center gap-2"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5 3.5 6.5v13l5.5-2 6 2 5.5-2v-13l-5.5 2-6-2z"/><path d="M9 4.5v13M15 6.5v13"/></svg><span id="mapBtnLabel">На карту</span></button>
             </div>
         </div>
 
@@ -740,7 +756,9 @@
                     items: Array.isArray(t.items) ? t.items.filter(i => i && i.name).map(i => ({
                         uid: String(i.uid || newUid()), name: String(i.name), group: i.group === 'bar' ? 'bar' : 'kitchen',
                         guest: Math.max(1, parseInt(i.guest) || 1), qty: Math.max(1, parseInt(i.qty) || 1),
-                        option: String(i.option || ''), note: String(i.note || '')
+                        option: String(i.option || ''), note: String(i.note || ''),
+                        // Сколько штук уже отнесено (старые «всё отдано» столы — всё отнесено)
+                        done: Math.max(0, Math.min(Math.max(1, parseInt(i.qty) || 1), t.posSynced && t.served ? Math.max(1, parseInt(i.qty) || 1) : (parseInt(i.done) || 0)))
                     })) : []
                 });
             });
@@ -918,8 +936,9 @@
                 } else {
                     const st = STATUS_STYLE[tableStatus(table)];
                     cls += st ? st.card : 'bg-slate-800/85 border-slate-700/90 text-slate-200';
-                    if (total > 0 && st) {
-                        badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${st.badge} font-extrabold text-[11px] flex items-center justify-center shadow">${total}</div>`;
+                    const shownCount = tableStatus(table) === 'pos' ? leftToDeliver(table) : total;
+                    if (shownCount > 0 && st) {
+                        badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${st.badge} font-extrabold text-[11px] flex items-center justify-center shadow">${shownCount}</div>`;
                     }
                     if (st) {
                         const time = elapsedLabel(table.openedAt);
@@ -1135,16 +1154,19 @@
             if (table.guestCount < 1) table.guestCount = 1;
             currentGuestTab = Math.min(table.activeGuest || 1, table.guestCount);
             searchQuery = '';
+            reorderMode = false;
             $('menuSearchInput').value = '';
             hide('clearSearchBtn');
             renderGroupSwitch();
             renderOrderScreen();
             show('orderScreen');
+            $('deliveryList').scrollTop = 0;
             $('menuItemsList').scrollTop = 0;
         }
 
         function closeOrderScreen() {
             hide('orderScreen');
+            reorderMode = false;
             activeTableId = null;
             renderMap();
         }
@@ -1158,11 +1180,99 @@
             $('orderTableTitle').textContent = table.label === '?' ? 'Новый столик' : `Стол №${table.label}`;
             const time = elapsedLabel(table.openedAt);
             $('orderGuestsSubtitle').textContent = `${table.guestCount} ${plural(table.guestCount, 'гость', 'гостя', 'гостей')}${time ? ` · открыт ${time} назад` : ''}`;
-            renderGuestTabs(table);
-            renderCurrentOrderBox(table);
-            renderCategoriesBar();
-            renderMenuItemsList();
+            const delivery = isDeliveryView(table);
+            $('orderScreen').classList.toggle('delivery-mode', delivery);
+            $('deliveryView').classList.toggle('hidden', !delivery);
+            $('reorderBtn').classList.toggle('hidden', !delivery);
+            $('mapBtnLabel').classList.toggle('hidden', delivery);
+            if (delivery) {
+                if (document.activeElement === $('menuSearchInput')) $('menuSearchInput').blur();
+                renderDelivery(table);
+            } else {
+                renderGuestTabs(table);
+                renderCurrentOrderBox(table);
+                renderCategoriesBar();
+                renderMenuItemsList();
+            }
             renderPosSyncButton(table);
+        }
+
+        // ==========================================
+        // ВЫДАЧА: заказ вбит — отмечаем, что уже отнесли; меню открывается только «Дозаказом»
+        // ==========================================
+        let reorderMode = false;
+        const isDeliveryView = table => !reorderMode && table.items.length > 0 && ['pos', 'served'].includes(tableStatus(table));
+        const leftToDeliver = table => table.items.reduce((s, i) => s + i.qty - (i.done || 0), 0);
+
+        function startReorder() {
+            reorderMode = true;
+            const table = activeTable();
+            if (!table) return;
+            if (currentGuestTab === 'all') currentGuestTab = table.activeGuest || 1;
+            renderOrderScreen();
+            $('menuItemsList').scrollTop = 0;
+            showToast('Дозаказ: добавь блюда, потом «Вбил в POS»');
+        }
+
+        function renderDelivery(table) {
+            const total = tableItemCount(table);
+            const left = leftToDeliver(table);
+            $('deliveryTitle').textContent = left ? 'Отнести гостям' : 'Всё отнесено';
+            $('deliveryProgress').textContent = left ? `осталось ${left} из ${total}` : `${total} из ${total} ✓`;
+            $('deliveryProgress').className = `text-[13px] font-bold ${left ? 'text-amber-300' : 'text-emerald-300'}`;
+            $('deliveryBar').style.width = `${Math.round((total - left) / Math.max(1, total) * 100)}%`;
+
+            const list = $('deliveryList');
+            list.innerHTML = '';
+            for (let g = 1; g <= table.guestCount; g++) {
+                const items = table.items.filter(i => i.guest === g);
+                if (!items.length) continue;
+                const head = document.createElement('div');
+                head.className = 'text-xs font-extrabold text-amber-300 uppercase tracking-wider mt-3 mb-1.5 px-1 flex items-center gap-1';
+                head.innerHTML = `${ICON.person} Гость ${g}`;
+                list.appendChild(head);
+                // Сначала то, что ещё не отнесли
+                [...items].sort((a, b) => ((a.done || 0) >= a.qty) - ((b.done || 0) >= b.qty)).forEach(item => list.appendChild(deliveryRow(table, item)));
+            }
+            const hint = document.createElement('div');
+            hint.className = 'text-center text-xs text-slate-500 pt-4';
+            hint.textContent = 'Нажми на позицию, когда отнёс. Добавить блюда — «Дозаказ»';
+            list.appendChild(hint);
+        }
+
+        function deliveryRow(table, item) {
+            const done = Math.min(item.done || 0, item.qty);
+            const full = done >= item.qty;
+            const row = document.createElement('button');
+            row.className = `w-full text-left flex items-center gap-3 px-3 py-3 mb-2 rounded-2xl border transition active:scale-[0.99] ${full ? 'bg-slate-900/60 border-slate-800' : 'bg-slate-800 border-amber-500/30'}`;
+            const extras = [item.option ? `<span class="text-emerald-300">${esc(item.option)}</span>` : '', item.note ? `<span class="text-amber-300">«${esc(item.note)}»</span>` : ''].filter(Boolean).join(' · ');
+            row.innerHTML = `
+                <span class="w-9 h-9 shrink-0 rounded-xl border-2 flex items-center justify-center ${full ? 'bg-emerald-500 border-emerald-500 text-slate-950' : done ? 'border-emerald-500 text-emerald-300 text-xs font-extrabold' : 'border-slate-500'}">${full ? '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : done ? `${done}/${item.qty}` : ''}</span>
+                <span class="flex-1 min-w-0 ${full ? 'opacity-50' : ''}">
+                    <span class="block text-base font-bold leading-snug ${full ? 'line-through text-slate-400' : 'text-white'}">${esc(item.name)}</span>
+                    ${extras ? `<span class="block text-[13px] mt-0.5">${extras}</span>` : ''}
+                </span>
+                ${item.qty > 1 ? `<span class="shrink-0 text-base font-extrabold ${full ? 'text-slate-500' : 'text-white'}">×${item.qty}</span>` : ''}`;
+            row.onclick = () => toggleDelivered(table, item);
+            return row;
+        }
+
+        /** Касание: +1 отнесено (для ×2, ×3 — по одной). Полностью отнесённую — снова в «не отнесено». */
+        function toggleDelivered(table, item) {
+            const snap = snapshot();
+            const done = Math.min(item.done || 0, item.qty);
+            item.done = done >= item.qty ? 0 : done + 1;
+            vibrate(10);
+            const wasServed = table.served;
+            table.served = leftToDeliver(table) === 0;
+            saveState();
+            renderOrderScreen();
+            if (table.served && !wasServed) {
+                vibrate(30);
+                showToast('Всё отнесено — стол зелёный ✓', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            } else if (!table.served && wasServed) {
+                showToast('Стол снова жёлтый — не всё отнесено');
+            }
         }
 
         function renderGuestTabs(table) {
@@ -1288,6 +1398,7 @@
             row.querySelector('.btn-dec').onclick = () => {
                 if (item.qty > 1) {
                     item.qty -= 1;
+                    item.done = Math.min(item.done || 0, item.qty);
                 } else {
                     const snap = snapshot();
                     table.items = table.items.filter(x => x.uid !== item.uid);
@@ -1867,10 +1978,14 @@
                 // Красный стол → следующий шаг «вбил» (жёлтый)
                 btn.className = base + 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20';
                 btn.innerHTML = '<span>Вбил в POS</span>';
+            } else if (reorderMode) {
+                // Дозаказ открыт, но ничего не добавлено — вернуться к выдаче
+                btn.className = base + 'bg-slate-700 text-white';
+                btn.innerHTML = '<span>Готово — к выдаче</span>';
             } else if (status === 'pos') {
-                // Жёлтый стол → следующий шаг «всё отдал» (зелёный)
+                // Жёлтый стол → отметить всё отнесённым (зелёный)
                 btn.className = base + 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20';
-                btn.innerHTML = '<span>Всё отдал гостям</span>';
+                btn.innerHTML = '<span>Отнёс всё</span>';
             } else {
                 btn.className = base + 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300';
                 btn.innerHTML = '<span>✓ Всё отдано</span>';
@@ -1885,16 +2000,20 @@
             const status = tableStatus(table);
             if (status === 'new') {
                 table.posSynced = true;
-                table.served = false;
+                table.served = leftToDeliver(table) === 0;
+                reorderMode = false;
                 vibrate(20);
-                showToast('Вбито в POS — стол жёлтый', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+                showToast('Вбито в POS — отмечай, что отнёс', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            } else if (reorderMode) {
+                reorderMode = false;
             } else if (status === 'pos') {
+                table.items.forEach(i => { i.done = i.qty; });
                 table.served = true;
                 vibrate(20);
-                showToast('Всё отдано — стол зелёный ✓', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+                showToast('Всё отнесено — стол зелёный ✓', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
             } else {
-                table.served = false;
-                showToast('Снова ждут блюда — стол жёлтый', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+                showToast('Сними отметку с позиции, если что-то ещё не отнёс');
+                return;
             }
             saveState();
             renderOrderScreen();
@@ -2546,6 +2665,8 @@
             if (isOpen('summaryModal')) { closeSummaryModal(); return true; }
             if (isOpen('orderScreen')) {
                 if (searchQuery) { clearMenuSearch(); $('menuSearchInput').blur(); return true; }
+                const t = activeTable();
+                if (reorderMode && t && ['pos', 'served'].includes(tableStatus(t))) { reorderMode = false; renderOrderScreen(); return true; }
                 closeOrderScreen();
                 return true;
             }
