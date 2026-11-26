@@ -61,10 +61,11 @@
         /* «Весь стол»: только заказ на весь экран — удобно зачитать гостям */
         #orderScreen.review-mode #menuControls,
         #orderScreen.review-mode #menuItemsList { display: none; }
-        #orderScreen.review-mode #orderPanel { flex: 1 1 auto; max-height: none; border-bottom-width: 0; }
+        /* min-height: 0 — иначе блок растягивается по содержимому и список нельзя прокрутить */
+        #orderScreen.review-mode #orderPanel { flex: 1 1 0; min-height: 0; max-height: none; border-bottom-width: 0; }
         #orderScreen.review-mode #orderPanelHead { pointer-events: none; }
         #orderScreen.review-mode #orderPanelHead .chev { display: none; }
-        #orderScreen.review-mode #currentOrderBox { flex: 1 1 auto; padding-bottom: 1rem; }
+        #orderScreen.review-mode #currentOrderBox { flex: 1 1 0; min-height: 0; padding-bottom: 1rem; overscroll-behavior: contain; }
         #orderScreen.review-mode .line-name { font-size: 1.0625rem; }
         /* Идёт поиск (открыта клавиатура): заказ гостя, категории и панель POS прячем,
            чтобы результаты были сразу под полем поиска, а не под клавиатурой */
@@ -165,7 +166,7 @@
             </div>
 
             <!-- ТЕКУЩИЙ ЗАКАЗ (сворачивается в одну строку) -->
-            <div id="orderPanel" class="bg-emerald-500/[0.07] border-b-2 border-emerald-500/30 shrink-0 max-h-[38%] flex flex-col">
+            <div id="orderPanel" class="bg-emerald-500/[0.07] border-b-2 border-emerald-500/30 shrink-0 max-h-[38%] min-h-0 flex flex-col">
                 <button id="orderPanelHead" onclick="toggleOrderPanel()" class="w-full shrink-0 px-3 h-11 flex items-center gap-2 text-left">
                     <span class="text-emerald-400"><svg class="chev w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                     <span id="orderPanelTitle" class="text-[13px] font-extrabold uppercase tracking-wide text-emerald-300 shrink-0">Заказ</span>
