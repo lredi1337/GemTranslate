@@ -54,6 +54,11 @@
             50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
         }
         .needs-attention { animation: pulse-border 2.5s infinite; }
+        /* Идёт поиск (открыта клавиатура): заказ гостя, категории и панель POS прячем,
+           чтобы результаты были сразу под полем поиска, а не под клавиатурой */
+        #orderScreen.search-mode #currentOrderBox,
+        #orderScreen.search-mode #categoriesBar,
+        #orderScreen.search-mode #posBar { display: none; }
     </style>
 </head>
 <body class="text-slate-100 w-screen h-screen overflow-hidden">
@@ -174,7 +179,7 @@
             <div id="menuItemsList" class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2"></div>
 
             <!-- НИЖНЯЯ ПАНЕЛЬ: POS -->
-            <div class="bg-slate-900 border-t border-slate-800 px-3 pt-2.5 bottom-safe flex items-center justify-between gap-2 shrink-0">
+            <div id="posBar" class="bg-slate-900 border-t border-slate-800 px-3 pt-2.5 bottom-safe flex items-center justify-between gap-2 shrink-0">
                 <button id="togglePosSyncedBtn" onclick="toggleTablePosSynced()" class="flex-1 h-11 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition"></button>
                 <button onclick="closeOrderScreen()" class="h-11 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs">На карту</button>
             </div>
@@ -1444,6 +1449,8 @@
         }
 
         function openModifierModal(item, noteMode) {
+            // Клавиатура поиска закрывается: в окне свой ввод примечания
+            if (document.activeElement === $('menuSearchInput')) $('menuSearchInput').blur();
             pendingModItem = item;
             selectedModOption = null;
             pendingModConfig = item.mod ? MODIFIER_CONFIGS[item.mod] : null;
@@ -2161,6 +2168,29 @@
         $('modCustomNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!$('modConfirmBtn').disabled) confirmModifierSelection(); else e.target.blur(); } });
         $('itemSheetNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveItemSheet(); } });
         $('menuSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+
+        // ПОИСК С КЛАВИАТУРОЙ: пока поле в фокусе — режим поиска (результаты сразу под полем)
+        const searchInput = $('menuSearchInput');
+        searchInput.addEventListener('focus', () => {
+            $('orderScreen').classList.add('search-mode');
+            $('menuItemsList').scrollTop = 0;
+        });
+        searchInput.addEventListener('blur', () => $('orderScreen').classList.remove('search-mode'));
+        // Касание результатов, гостей и ✕ не забирает фокус у поиска: клавиатура остаётся, можно искать следующее
+        ['menuItemsList', 'guestTabsContainer', 'clearSearchBtn'].forEach(id => {
+            $(id).addEventListener('mousedown', e => {
+                if (document.activeElement === searchInput) e.preventDefault();
+            });
+        });
+        // Клавиатуру закрыли кнопкой «Назад» — поле остаётся в фокусе, поэтому снимаем фокус сами
+        let fullHeight = window.innerHeight, keyboardWasOpen = false;
+        window.addEventListener('resize', () => {
+            fullHeight = Math.max(fullHeight, window.innerHeight);
+            const open = window.innerHeight < fullHeight - 150;
+            const el = document.activeElement;
+            if (keyboardWasOpen && !open && el && /^(INPUT|TEXTAREA)$/.test(el.tagName)) el.blur();
+            keyboardWasOpen = open;
+        });
         // Нажатие на затемнённый фон закрывает окно
         [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
          ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal],
