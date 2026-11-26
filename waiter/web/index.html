@@ -313,6 +313,35 @@
             </div>
         </div>
 
+        <!-- ОКНО: СВОЯ ПОЗИЦИЯ (нет в меню приложения) -->
+        <div id="customModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl max-h-[92%] flex flex-col">
+                <div class="flex items-start justify-between gap-2 mb-3 shrink-0">
+                    <div>
+                        <h3 id="customModalTitle" class="text-base font-extrabold text-white">Своя позиция</h3>
+                        <p class="text-[13px] text-slate-400 leading-snug">Появится в разделе «★ Свои», в поиске и в стоп-листе</p>
+                    </div>
+                    <button onclick="closeCustomModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <div class="overflow-y-auto no-scrollbar flex-1 min-h-0">
+                    <label class="block text-[13px] font-semibold text-slate-300 mb-1.5" for="customName">Название</label>
+                    <input id="customName" type="text" maxlength="60" enterkeyhint="done" autocomplete="off" placeholder="Например: Хлеб" class="w-full h-12 bg-slate-800 border border-slate-700 rounded-xl px-3 text-[15px] text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 mb-3">
+                    <div class="flex bg-slate-800 p-1 rounded-xl mb-4">
+                        <button id="customGroupKitchen" onclick="setCustomGroup('kitchen')" class="flex-1 h-10 rounded-lg text-[13px] font-bold transition">Кухня</button>
+                        <button id="customGroupBar" onclick="setCustomGroup('bar')" class="flex-1 h-10 rounded-lg text-[13px] font-bold transition">Бар</button>
+                    </div>
+                    <div class="text-[13px] font-semibold text-slate-300 mb-0.5">Варианты на выбор <span class="text-slate-500 font-normal">— необязательно</span></div>
+                    <p class="text-xs text-slate-400 mb-2 leading-snug">Например, «Белый» и «Чёрный». Если варианты есть, при добавлении в заказ нужно будет выбрать один.</p>
+                    <div id="customOptions" class="space-y-2 mb-2"></div>
+                    <button onclick="addCustomOption()" class="w-full h-11 rounded-xl border border-dashed border-slate-600 text-slate-300 text-[13px] font-bold mb-2">+ Вариант</button>
+                </div>
+                <div class="flex gap-2 pt-3 shrink-0">
+                    <button id="customDeleteBtn" onclick="deleteCustomItem()" class="hidden px-4 py-3 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/30 font-bold text-sm">Удалить</button>
+                    <button onclick="saveCustomItem()" class="flex-1 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-sm">Сохранить</button>
+                </div>
+            </div>
+        </div>
+
         <!-- ОКНО: НОМЕР СТОЛА -->
         <div id="renameModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
             <div class="bg-slate-900 border border-slate-700 w-full max-w-xs rounded-3xl p-5 shadow-2xl">
@@ -623,16 +652,22 @@
         }
 
         const ALL_ITEMS = [];
-        MENU_CATEGORIES.forEach(cat => cat.items.forEach(it => {
-            it.group = cat.group;
-            it.catTitle = cat.title;
-            it.fold = fold(it.name);
-            it.tr = translit(it.fold);
-            it.catFold = fold(cat.title);
-            ALL_ITEMS.push(it);
-        }));
-        const MENU_NAMES = [...new Set(ALL_ITEMS.map(i => i.name))];
-        const NAME_BY_FOLD = new Map(MENU_NAMES.map(n => [fold(n), n]));
+        let MENU_NAMES = [];
+        let NAME_BY_FOLD = new Map();
+        function indexMenuItems() {
+            ALL_ITEMS.length = 0;
+            MENU_CATEGORIES.forEach(cat => cat.items.forEach(it => {
+                it.group = cat.group;
+                it.catTitle = cat.title;
+                it.fold = fold(it.name);
+                it.tr = translit(it.fold);
+                it.catFold = fold(cat.title);
+                ALL_ITEMS.push(it);
+            }));
+            MENU_NAMES = [...new Set(ALL_ITEMS.map(i => i.name))];
+            NAME_BY_FOLD = new Map(MENU_NAMES.map(n => [fold(n), n]));
+        }
+        indexMenuItems();
 
         // ==========================================
         // СОСТОЯНИЕ
@@ -661,6 +696,7 @@
             note: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 5 5z"/><path d="M8 10h8M8 13h5"/></svg>',
             plus: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
             minus: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>',
+            pencil: '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5l4 4L9 19H5v-4z"/><path d="M13.5 6.5l4 4"/></svg>',
             person: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>'
         };
         const $ = id => document.getElementById(id);
@@ -677,7 +713,16 @@
 
         /** Чинит данные из любой версии: недостающие поля, новые столы из схемы по умолчанию. */
         function normalizeState(raw) {
-            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
+            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], custom: [], mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
+            // Свои позиции: { id, name, group, options: [] }
+            const seen = new Set();
+            (Array.isArray(raw?.custom) ? raw.custom : []).forEach(c => {
+                const name = String(c?.name || '').trim().slice(0, 60);
+                if (!name || seen.has(fold(name))) return;
+                seen.add(fold(name));
+                const options = [...new Set((Array.isArray(c.options) ? c.options : []).map(o => String(o).trim().slice(0, 40)).filter(Boolean))].slice(0, 12);
+                s.custom.push({ id: String(c.id || newUid()), name, group: c.group === 'bar' ? 'bar' : 'kitchen', options });
+            });
             s.removed = Array.isArray(raw?.removed) ? raw.removed.filter(x => typeof x === 'string') : [];
             s.stop = Array.isArray(raw?.stop) ? [...new Set(raw.stop.filter(x => typeof x === 'string' && x.trim()))] : [];
             const src = Array.isArray(raw?.tables) ? raw.tables : [];
@@ -731,6 +776,27 @@
         function applyState(s) {
             state = s;
             stopSet = new Set(state.stop);
+            rebuildCustomMenu();
+        }
+
+        /** Раздел «★ Свои» в начале кухни и бара + варианты выбора для своих позиций. */
+        function rebuildCustomMenu() {
+            for (let i = MENU_CATEGORIES.length - 1; i >= 0; i--) if (MENU_CATEGORIES[i].custom) MENU_CATEGORIES.splice(i, 1);
+            Object.keys(MODIFIER_CONFIGS).filter(k => k.startsWith('custom:')).forEach(k => delete MODIFIER_CONFIGS[k]);
+            ['kitchen', 'bar'].forEach(group => {
+                const items = (state.custom || []).filter(c => c.group === group).map(c => {
+                    const it = { name: c.name, customId: c.id };
+                    if (c.options.length) {
+                        it.mod = 'custom:' + c.id;
+                        MODIFIER_CONFIGS[it.mod] = { prompt: `${c.name}: выбери вариант`, options: c.options };
+                    }
+                    return it;
+                });
+                const at = MENU_CATEGORIES.findIndex(c => c.group === group);
+                MENU_CATEGORIES.splice(at, 0, { id: 'c_' + group, group, title: '★ Свои', custom: true, items });
+            });
+            indexMenuItems();
+            if (typeof indexStopMatching === 'function' && MENU_TOKENS) indexStopMatching();
         }
 
         function saveState() {
@@ -742,7 +808,7 @@
             try { Native && Native.saveState(json); } catch (e) {}
         }
 
-        function snapshot() { return JSON.stringify({ tables: state.tables, stop: state.stop, removed: state.removed }); }
+        function snapshot() { return JSON.stringify({ tables: state.tables, stop: state.stop, removed: state.removed, custom: state.custom, mode: state.mode }); }
         function restoreSnapshot(snap) {
             const d = JSON.parse(snap);
             applyState(normalizeState({ ...d, ts: Date.now() }));
@@ -1336,7 +1402,7 @@
         function switchMenuGroup(group) {
             if (searchQuery) clearMenuSearch(true);
             currentMenuGroup = group;
-            const first = MENU_CATEGORIES.find(c => c.group === group);
+            const first = MENU_CATEGORIES.find(c => c.group === group && !c.custom);
             if (first) currentCategoryId = first.id;
             renderGroupSwitch();
             renderCategoriesBar();
@@ -1358,7 +1424,8 @@
                 btn.className = active
                     ? 'h-9 px-3.5 rounded-xl bg-slate-100 text-slate-950 font-extrabold text-[13px] shrink-0 transition'
                     : 'h-9 px-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-semibold text-[13px] shrink-0 transition';
-                btn.innerHTML = `${esc(cat.title)}${stopped ? ` <span class="text-rose-400">·${stopped}</span>` : ''}`;
+                btn.innerHTML = `${esc(cat.title)}${cat.custom && cat.items.length ? ` <span class="opacity-60">${cat.items.length}</span>` : ''}${stopped ? ` <span class="text-rose-400">·${stopped}</span>` : ''}`;
+                if (cat.custom && !active) btn.className = btn.className.replace('text-slate-300', 'text-amber-300').replace('border-slate-700', 'border-amber-500/40 border-dashed');
                 btn.onclick = () => {
                     currentCategoryId = cat.id;
                     renderCategoriesBar();
@@ -1414,8 +1481,20 @@
             const searching = !!searchQuery.trim();
             const items = searching ? searchMenu(searchQuery) : (MENU_CATEGORIES.find(c => c.id === currentCategoryId)?.items || []);
 
+            const currentCat = MENU_CATEGORIES.find(c => c.id === currentCategoryId);
+            if (!searching && currentCat?.custom) {
+                container.appendChild(addCustomCard('', currentCat.items.length ? '+ Добавить свою позицию' : '+ Добавить первую свою позицию'));
+                if (!currentCat.items.length) {
+                    const hint = document.createElement('div');
+                    hint.className = 'text-center text-[13px] text-slate-400 px-4 py-3 leading-snug';
+                    hint.textContent = 'Здесь будут позиции, которых нет в меню приложения: например, хлеб белый / чёрный.';
+                    container.appendChild(hint);
+                    return;
+                }
+            }
             if (!items.length) {
-                container.innerHTML = `<div class="text-center py-8 text-sm text-slate-400">Ничего не найдено</div>`;
+                container.innerHTML = `<div class="text-center pt-8 pb-3 text-sm text-slate-400">Ничего не найдено</div>`;
+                if (searching) container.appendChild(addCustomCard(searchQuery.trim(), `+ Добавить «${searchQuery.trim()}» в меню`));
                 return;
             }
             const guestLabel = typeof currentGuestTab === 'number' ? currentGuestTab : 1;
@@ -1437,6 +1516,8 @@
                 let hint = '';
                 if (stopped) hint = `<span class="text-xs text-rose-400 font-bold">НА СТОПЕ · зажми, чтобы вернуть</span>`;
                 else if (item.mod && MOD_HINTS[item.mod]) hint = `<span class="text-xs ${MOD_HINTS[item.mod][0]} font-semibold">${MOD_HINTS[item.mod][1]}</span>`;
+                else if (item.mod && MODIFIER_CONFIGS[item.mod]) hint = `<span class="text-xs text-sky-300 font-semibold">${esc(MODIFIER_CONFIGS[item.mod].options.join(' / '))}</span>`;
+                if (item.customId && !stopped) hint = `<span class="text-xs text-amber-300 font-semibold">★</span>${hint}`;
                 const meta = [searching ? `<span class="text-xs text-slate-400">${esc(item.catTitle)}</span>` : '', hint].filter(Boolean).join('');
 
                 card.innerHTML = `
@@ -1447,6 +1528,7 @@
                     ${stopped
                         ? `<span class="shrink-0 px-2 py-1 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/30 font-extrabold text-xs">СТОП</span>`
                         : `${count ? `<span class="shrink-0 min-w-[2rem] h-7 px-2 rounded-full bg-emerald-500 text-slate-950 font-extrabold text-sm flex items-center justify-center">×${count}</span>` : ''}
+                           ${item.customId ? `<button class="btn-edit shrink-0 w-10 h-10 rounded-xl text-slate-400 flex items-center justify-center" aria-label="Изменить позицию">${ICON.pencil}</button>` : ''}
                            <button class="btn-note shrink-0 w-10 h-10 rounded-xl text-slate-400 flex items-center justify-center" aria-label="Добавить с примечанием">${ICON.note}</button>
                            <span class="shrink-0 w-10 h-10 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center justify-center">${ICON.plus}</span>`}`;
 
@@ -1456,6 +1538,7 @@
                             showToast(`«${item.name}» на стопе`, { label: 'Вернуть', fn: () => setItemStopped(item.name, false) });
                             return;
                         }
+                        if (e.target.closest('.btn-edit')) { openCustomModal(item.customId); return; }
                         if (e.target.closest('.btn-note')) { openModifierModal(item, true); return; }
                         if (item.mod) openModifierModal(item, false);
                         else addItemToGuest(item, '', '');
@@ -1469,6 +1552,135 @@
             tip.className = 'text-center text-xs text-slate-500 pt-2 pb-1';
             tip.textContent = `Добавляется гостю ${guestLabel} · зажми позицию, чтобы поставить на стоп`;
             container.appendChild(tip);
+            if (!currentCat?.custom || searching) {
+                const add = document.createElement('button');
+                add.className = 'w-full text-center text-[13px] text-amber-300 font-semibold py-2';
+                add.textContent = '+ Нет в меню? Добавить свою позицию';
+                add.onclick = () => openCustomModal(null, searching ? searchQuery.trim() : '');
+                container.appendChild(add);
+            }
+        }
+
+        // ==========================================
+        // СВОИ ПОЗИЦИИ: то, чего нет в меню приложения (хлеб белый / чёрный и т. п.)
+        // ==========================================
+        let customDraft = null;
+
+        function addCustomCard(name, label) {
+            const btn = document.createElement('button');
+            btn.className = 'w-full min-h-[56px] rounded-xl border-2 border-dashed border-amber-500/40 bg-amber-500/[0.06] text-amber-300 text-[15px] font-bold px-3';
+            btn.textContent = label;
+            btn.onclick = () => openCustomModal(null, name);
+            return btn;
+        }
+
+        function openCustomModal(id, presetName) {
+            const existing = id ? state.custom.find(c => c.id === id) : null;
+            if (document.activeElement === $('menuSearchInput')) $('menuSearchInput').blur();
+            customDraft = existing
+                ? { id: existing.id, name: existing.name, group: existing.group, options: [...existing.options] }
+                : { id: null, name: presetName ? presetName.charAt(0).toUpperCase() + presetName.slice(1) : '', group: currentMenuGroup, options: [] };
+            $('customModalTitle').textContent = existing ? 'Изменить позицию' : 'Своя позиция';
+            $('customName').value = customDraft.name;
+            $('customDeleteBtn').classList.toggle('hidden', !existing);
+            renderCustomGroup();
+            renderCustomOptions();
+            show('customModal');
+            if (!existing) setTimeout(() => $('customName').focus(), 120);
+        }
+
+        function closeCustomModal() {
+            hide('customModal');
+            customDraft = null;
+        }
+
+        function setCustomGroup(group) {
+            if (!customDraft) return;
+            customDraft.group = group;
+            renderCustomGroup();
+        }
+
+        function renderCustomGroup() {
+            const on = 'flex-1 h-10 rounded-lg text-[13px] font-bold transition text-slate-950 ';
+            const off = 'flex-1 h-10 rounded-lg text-[13px] font-bold transition text-slate-400';
+            $('customGroupKitchen').className = customDraft.group === 'kitchen' ? on + 'bg-emerald-500' : off;
+            $('customGroupBar').className = customDraft.group === 'bar' ? on + 'bg-sky-500' : off;
+        }
+
+        function renderCustomOptions() {
+            const wrap = $('customOptions');
+            wrap.innerHTML = '';
+            customDraft.options.forEach((opt, i) => {
+                const row = document.createElement('div');
+                row.className = 'flex gap-2';
+                row.innerHTML = `
+                    <input type="text" maxlength="40" enterkeyhint="next" autocomplete="off" placeholder="Вариант ${i + 1}" class="flex-1 h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-[15px] text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    <button class="w-11 h-11 shrink-0 rounded-xl bg-slate-800 border border-slate-700 text-slate-400" aria-label="Убрать вариант">✕</button>`;
+                const input = row.querySelector('input');
+                input.value = opt;
+                input.oninput = () => { customDraft.options[i] = input.value; };
+                input.onkeydown = e => {
+                    if (e.key !== 'Enter') return;
+                    e.preventDefault();
+                    if (i === customDraft.options.length - 1) addCustomOption(); else wrap.querySelectorAll('input')[i + 1].focus();
+                };
+                row.querySelector('button').onclick = () => { customDraft.options.splice(i, 1); renderCustomOptions(); };
+                wrap.appendChild(row);
+            });
+        }
+
+        function addCustomOption() {
+            if (!customDraft) return;
+            if (customDraft.options.length >= 12) { showToast('Не больше 12 вариантов'); return; }
+            customDraft.options.push('');
+            renderCustomOptions();
+            const inputs = $('customOptions').querySelectorAll('input');
+            inputs[inputs.length - 1].focus();
+        }
+
+        function saveCustomItem() {
+            if (!customDraft) return;
+            const name = $('customName').value.trim().replace(/\s+/g, ' ');
+            if (!name) { showToast('Впиши название'); $('customName').focus(); return; }
+            const old = customDraft.id ? state.custom.find(c => c.id === customDraft.id) : null;
+            const clash = MENU_NAMES.find(n => fold(n) === fold(name) && (!old || fold(old.name) !== fold(name)));
+            if (clash) { showToast(`«${clash}» уже есть в меню`); return; }
+            const options = [...new Set(customDraft.options.map(o => o.trim()).filter(Boolean))];
+            if (options.length === 1) { showToast('Нужно хотя бы 2 варианта — или убери вариант'); return; }
+            const snap = snapshot();
+            if (old) {
+                if (old.name !== name) state.stop = state.stop.map(x => x === old.name ? name : x);
+                Object.assign(old, { name, group: customDraft.group, options });
+            } else {
+                state.custom.push({ id: 'cu_' + newUid(), name, group: customDraft.group, options });
+            }
+            saveState();
+            rebuildCustomMenu();
+            hide('customModal');
+            customDraft = null;
+            // Показываем раздел «★ Свои», где появилась позиция
+            if (isOpen('orderScreen')) {
+                clearMenuSearch(true);
+                currentMenuGroup = old ? old.group : state.custom[state.custom.length - 1].group;
+                currentCategoryId = 'c_' + currentMenuGroup;
+                renderGroupSwitch();
+            }
+            rerenderAll();
+            showToast(old ? `Сохранено: ${name}` : `Добавлено в меню: ${name}`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+        }
+
+        function deleteCustomItem() {
+            if (!customDraft?.id) return;
+            const item = state.custom.find(c => c.id === customDraft.id);
+            if (!item) return;
+            const snap = snapshot();
+            state.custom = state.custom.filter(c => c !== item);
+            state.stop = state.stop.filter(x => x !== item.name);
+            saveState();
+            rebuildCustomMenu();
+            closeCustomModal();
+            rerenderAll();
+            showToast(`Удалено из меню: ${item.name}`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
         }
 
         /** Касание и долгое нажатие на одном элементе. Прокрутка списка нажатие отменяет. */
@@ -1936,11 +2148,13 @@
         const tokenEq = (x, y) => isCyr(x.s) === isCyr(y.s) ? tokMatch(x.s, y.s)
             : (x.t === y.t || (Math.min(x.t.length, y.t.length) >= 4 && (x.t.startsWith(y.t) || y.t.startsWith(x.t))));
 
-        const MENU_TOKENS = MENU_NAMES.map(name => ({
-            name, tokens: wordsOf(name).map(makeToken)
-        }));
-        const OPTION_PHRASES = [...new Set(Object.values(MODIFIER_CONFIGS).flatMap(c => c.options))]
-            .map(text => ({ text: text.replace(/[^\p{L}\p{N}\s+()-]/gu, '').trim(), tokens: wordsOf(text).map(makeToken) }));
+        let MENU_TOKENS = [], OPTION_PHRASES = [];
+        function indexStopMatching() {
+            MENU_TOKENS = MENU_NAMES.map(name => ({ name, tokens: wordsOf(name).map(makeToken) }));
+            OPTION_PHRASES = [...new Set(Object.values(MODIFIER_CONFIGS).flatMap(c => c.options))]
+                .map(text => ({ text: text.replace(/[^\p{L}\p{N}\s+()-]/gu, '').trim(), tokens: wordsOf(text).map(makeToken) }));
+        }
+        indexStopMatching();
 
         /** Одна строка (фрагмент) → позиции меню / продукт / ничего. */
         function matchFragment(fragment) {
@@ -2283,6 +2497,7 @@
         // ==========================================
         $('renameInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveTableName(); } });
         $('modCustomNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!$('modConfirmBtn').disabled) confirmModifierSelection(); else e.target.blur(); } });
+        $('customName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         $('itemSheetNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveItemSheet(); } });
         $('menuSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
 
@@ -2311,7 +2526,7 @@
         // Нажатие на затемнённый фон закрывает окно
         [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
          ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal],
-         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal], ['tableMenuModal', closeTableMenu]]
+         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal], ['tableMenuModal', closeTableMenu], ['customModal', closeCustomModal]]
             .forEach(([id, fn]) => $(id).addEventListener('click', e => { if (e.target.id === id) fn(); }));
 
         // ==========================================
@@ -2321,6 +2536,7 @@
         function handleBack() {
             if (isOpen('confirmModal')) { closeConfirmModal(); return true; }
             if (isOpen('tableMenuModal')) { closeTableMenu(); return true; }
+            if (isOpen('customModal')) { closeCustomModal(); return true; }
             if (isOpen('renameModal')) { closeRenameModal(); return true; }
             if (isOpen('itemSheet')) { saveItemSheet(); return true; }
             if (isOpen('modifierModal')) { closeModifierModal(); return true; }
