@@ -259,8 +259,7 @@
                     </div>
                     <button onclick="closeModifierModal()" class="w-9 h-9 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
                 </div>
-                <p id="modPromptLabel" class="text-xs text-slate-300 font-semibold mb-2.5">Выбери вариант:</p>
-                <div id="modOptionsGrid" class="grid grid-cols-1 gap-2 mb-4 max-h-[45vh] overflow-y-auto no-scrollbar"></div>
+                <div id="modOptionsGrid" class="mb-4 max-h-[50vh] overflow-y-auto no-scrollbar space-y-3"></div>
                 <input id="modCustomNote" type="text" enterkeyhint="done" maxlength="120" placeholder="Примечание (без лука, лёд отдельно)..." class="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 mb-4">
                 <button id="modConfirmBtn" onclick="confirmModifierSelection()" class="w-full py-3.5 rounded-2xl font-extrabold text-sm transition">Добавить в заказ</button>
             </div>
@@ -426,9 +425,12 @@
         // ==========================================
         const MODIFIER_CONFIGS = {
             breakfast_drink: { prompt: 'Напиток в подарок к завтраку:', options: ['☕ Американо', '🍊 Апельсиновый сок', 'Без напитка'] },
+            // Несколько выборов у одной позиции: каждый — своя строка кнопок
             porridge_type: {
-                prompt: 'Какую кашу и напиток в подарок?',
-                options: ['🥣 Овсяная + ☕ Американо', '🥣 Овсяная + 🍊 Апельсиновый сок', '🥣 Овсяная (без напитка)', '🍚 Рисовая + ☕ Американо', '🍚 Рисовая + 🍊 Апельсиновый сок', '🍚 Рисовая (без напитка)']
+                groups: [
+                    { prompt: 'Каша:', options: ['🥣 Овсяная', '🍚 Рисовая'] },
+                    { prompt: 'Напиток в подарок:', options: ['☕ Американо', '🍊 Апельсиновый сок', 'Без напитка'] }
+                ]
             },
             pancake_topping: { prompt: 'Выбери добавку к блинам:', options: ['Сгущёнка', 'Сметана', 'Джем', 'Без добавки'] },
             pancake_new: { prompt: 'Выбери добавку к домашним блинам:', options: ['Мёд', 'Сметана', 'Сгущённое молоко', 'Джем'] },
@@ -703,7 +705,9 @@
         let searchQuery = '';
         let pendingModItem = null;
         let pendingModConfig = null;
-        let selectedModOption = null;
+        let selectedModOption = null; // выбор по группам: ['🥣 Овсяная', '☕ Американо']
+        /** Выборы позиции: одна группа (prompt + options) или несколько (groups). */
+        const modGroups = config => config ? (config.groups || [{ prompt: config.prompt, options: config.options }]) : [];
         let sheetItemUid = null;
 
         const LS_KEY = 'waiter_state_v2';
@@ -1865,68 +1869,87 @@
             // Клавиатура поиска закрывается: в окне свой ввод примечания
             if (document.activeElement === $('menuSearchInput')) $('menuSearchInput').blur();
             pendingModItem = item;
-            selectedModOption = null;
             pendingModConfig = item.mod ? MODIFIER_CONFIGS[item.mod] : null;
-            const config = pendingModConfig;
+            const groups = modGroups(pendingModConfig);
+            selectedModOption = groups.map(() => null);
             $('modItemName').textContent = item.name;
             $('modCustomNote').value = '';
-            const grid = $('modOptionsGrid');
-            grid.innerHTML = '';
+            const wrap = $('modOptionsGrid');
+            wrap.innerHTML = '';
 
-            if (config) {
-                $('modCategoryTag').textContent = 'Обязательный выбор';
-                $('modPromptLabel').textContent = config.prompt;
-                show('modPromptLabel');
+            if (groups.length) {
+                $('modCategoryTag').textContent = groups.length > 1 ? 'Выбери в каждой строке' : 'Обязательный выбор';
                 show('modOptionsGrid');
-                let available = 0;
-                config.options.forEach(opt => {
-                    const blocked = optionBlockedBy(opt);
-                    const btn = document.createElement('button');
-                    btn.type = 'button';
-                    btn.dataset.opt = opt;
-                    btn.disabled = !!blocked;
-                    btn.className = blocked
-                        ? 'mod-opt-btn p-3 rounded-2xl border border-rose-500/30 bg-slate-900 text-left font-bold text-sm text-slate-500 flex items-center justify-between'
-                        : 'mod-opt-btn p-3 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between';
-                    btn.innerHTML = blocked
-                        ? `<span class="line-through">${esc(opt)}</span><span class="text-[11px] text-rose-400 font-extrabold no-underline">СТОП</span>`
-                        : `<span>${esc(opt)}</span><span class="check-dot w-5 h-5 shrink-0 rounded-full border-2 border-slate-500"></span>`;
-                    if (!blocked) {
-                        available++;
-                        btn.onclick = () => { selectedModOption = opt; paintModOptions(); updateModConfirm(); };
-                    }
-                    grid.appendChild(btn);
+                let blockedGroup = false;
+                groups.forEach((group, gi) => {
+                    const block = document.createElement('div');
+                    const label = document.createElement('p');
+                    label.className = 'text-[13px] text-slate-300 font-semibold mb-2';
+                    label.textContent = group.prompt;
+                    block.appendChild(label);
+                    // Короткие варианты — в две колонки, длинные — по одному в строке
+                    const grid = document.createElement('div');
+                    grid.className = `grid ${group.options.every(o => o.length <= 18) ? 'grid-cols-2' : 'grid-cols-1'} gap-2`;
+                    let available = 0;
+                    group.options.forEach(opt => {
+                        const blocked = optionBlockedBy(opt);
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.dataset.opt = opt;
+                        btn.dataset.group = gi;
+                        btn.disabled = !!blocked;
+                        btn.className = blocked
+                            ? 'mod-opt-btn min-h-[48px] px-3 py-2 rounded-2xl border border-rose-500/30 bg-slate-900 text-left font-bold text-sm text-slate-500 flex items-center justify-between gap-2'
+                            : 'mod-opt-btn min-h-[48px] px-3 py-2 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between gap-2';
+                        btn.innerHTML = blocked
+                            ? `<span class="line-through">${esc(opt)}</span><span class="text-[11px] text-rose-400 font-extrabold">СТОП</span>`
+                            : `<span>${esc(opt)}</span><span class="check-dot w-5 h-5 shrink-0 rounded-full border-2 border-slate-500"></span>`;
+                        if (!blocked) {
+                            available++;
+                            btn.onclick = () => { selectedModOption[gi] = opt; paintModOptions(); updateModConfirm(); };
+                        }
+                        grid.appendChild(btn);
+                    });
+                    if (!available) blockedGroup = true;
+                    block.appendChild(grid);
+                    wrap.appendChild(block);
                 });
-                if (!available) showToast('Все варианты сейчас на стопе');
+                if (blockedGroup) showToast('Все варианты сейчас на стопе');
             } else {
                 $('modCategoryTag').textContent = 'Примечание к блюду';
-                hide('modPromptLabel');
                 hide('modOptionsGrid');
             }
             updateModConfirm();
             show('modifierModal');
-            if (noteMode && !config) setTimeout(() => $('modCustomNote').focus(), 120);
+            if (noteMode && !groups.length) setTimeout(() => $('modCustomNote').focus(), 120);
         }
 
         function paintModOptions() {
             document.querySelectorAll('#modOptionsGrid .mod-opt-btn:not(:disabled)').forEach(b => {
-                const on = b.dataset.opt === selectedModOption;
+                const on = selectedModOption[+b.dataset.group] === b.dataset.opt;
                 b.className = on
-                    ? 'mod-opt-btn p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-500/20 text-left font-extrabold text-sm text-white transition flex items-center justify-between'
-                    : 'mod-opt-btn p-3 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between';
+                    ? 'mod-opt-btn min-h-[48px] px-3 py-2 rounded-2xl border-2 border-emerald-500 bg-emerald-500/20 text-left font-extrabold text-sm text-white transition flex items-center justify-between gap-2'
+                    : 'mod-opt-btn min-h-[48px] px-3 py-2 rounded-2xl border border-slate-700 bg-slate-800/80 text-left font-bold text-sm text-slate-200 transition flex items-center justify-between gap-2';
                 b.querySelector('.check-dot').className = on
                     ? 'check-dot w-5 h-5 shrink-0 rounded-full bg-emerald-500 border-2 border-emerald-300'
                     : 'check-dot w-5 h-5 shrink-0 rounded-full border-2 border-slate-500';
             });
         }
 
+        const modChoiceDone = () => !pendingModConfig || (Array.isArray(selectedModOption) && selectedModOption.every(Boolean));
+        /** Выбранное одной строкой для заказа: «🥣 Овсяная + ☕ Американо». */
+        const modChoiceText = () => Array.isArray(selectedModOption) ? selectedModOption.filter(Boolean).join(' + ') : '';
+
         function updateModConfirm() {
             const btn = $('modConfirmBtn');
             if (!btn || !pendingModItem) return;
-            const need = !!pendingModConfig && !selectedModOption;
+            const need = !modChoiceDone();
             const guest = typeof currentGuestTab === 'number' ? currentGuestTab : 1;
+            const groups = modGroups(pendingModConfig);
             btn.disabled = need;
-            btn.textContent = need ? 'Выбери вариант' : `Добавить · Гость ${guest}`;
+            btn.textContent = !need ? `Добавить · Гость ${guest}`
+                : groups.length > 1 ? `Выбери: ${groups.filter((g, i) => !selectedModOption[i]).map(g => g.prompt.replace(/[:：]\s*$/, '').toLowerCase()).join(' и ')}`
+                : 'Выбери вариант';
             btn.className = need
                 ? 'w-full py-3.5 rounded-2xl bg-slate-800 text-slate-500 font-extrabold text-sm transition'
                 : 'w-full py-3.5 rounded-2xl bg-emerald-500 active:bg-emerald-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-emerald-500/20 transition';
@@ -1941,9 +1964,9 @@
 
         function confirmModifierSelection() {
             if (!pendingModItem) return;
-            if (pendingModConfig && !selectedModOption) return;
+            if (!modChoiceDone()) return;
             const note = $('modCustomNote').value.trim();
-            addItemToGuest(pendingModItem, selectedModOption || '', note);
+            addItemToGuest(pendingModItem, modChoiceText(), note);
             closeModifierModal();
         }
 
@@ -2270,7 +2293,7 @@
         let MENU_TOKENS = [], OPTION_PHRASES = [];
         function indexStopMatching() {
             MENU_TOKENS = MENU_NAMES.map(name => ({ name, tokens: wordsOf(name).map(makeToken) }));
-            OPTION_PHRASES = [...new Set(Object.values(MODIFIER_CONFIGS).flatMap(c => c.options))]
+            OPTION_PHRASES = [...new Set(Object.values(MODIFIER_CONFIGS).flatMap(c => modGroups(c).flatMap(g => g.options)))]
                 .map(text => ({ text: text.replace(/[^\p{L}\p{N}\s+()-]/gu, '').trim(), tokens: wordsOf(text).map(makeToken) }));
         }
         indexStopMatching();
