@@ -48,6 +48,12 @@
         .press.pressing::after { transform: scaleX(1); transition: transform 0.45s linear 0.05s; }
 
         button:disabled { cursor: default; }
+        /* Сервировка: стол, которому чего-то не хватает, мягко пульсирует */
+        @keyframes pulse-border {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+            50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+        }
+        .needs-attention { animation: pulse-border 2.5s infinite; }
     </style>
 </head>
 <body class="text-slate-100 w-screen h-screen overflow-hidden">
@@ -57,13 +63,11 @@
         <header class="bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shrink-0 z-20 top-safe">
             <div class="px-3 h-14 flex items-center justify-between gap-2">
                 <div class="min-w-0 flex-1">
-                    <h1 class="font-bold text-base leading-tight text-white flex items-center gap-1.5 whitespace-nowrap">
-                        Приём заказов
-                    </h1>
+                    <h1 id="headerTitle" class="font-bold text-base leading-tight text-white whitespace-nowrap truncate">Приём заказов</h1>
                     <p id="headerSubtitle" class="text-xs text-slate-400 truncate">Нажми на стол, чтобы принять заказ</p>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
-                    <button onclick="openStopListModal()" class="h-10 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-bold border border-rose-500/30 transition flex items-center gap-1.5">
+                    <button id="stopHeaderBtn" onclick="openStopListModal()" class="h-10 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-bold border border-rose-500/30 transition flex items-center gap-1.5">
                         <span>🚫 Стоп</span>
                         <span id="stopListBadge" class="hidden bg-rose-500 text-white text-[10px] font-extrabold px-1.5 py-px rounded-full">0</span>
                     </button>
@@ -91,14 +95,36 @@
             </div>
         </main>
 
-        <!-- НИЖНЯЯ ПОДСКАЗКА -->
-        <footer class="bg-slate-900 border-t border-slate-800 px-4 pt-2.5 bottom-safe shrink-0 flex items-center justify-between text-xs text-slate-400">
+        <!-- НИЖНЯЯ СТРОКА РЕЖИМА -->
+        <div id="ordersBar" class="bg-slate-900 border-t border-slate-800 px-4 py-2.5 shrink-0 flex items-center justify-between text-xs text-slate-400">
             <div class="flex items-center gap-3">
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Не вбито</span>
                 <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Вбито в POS</span>
             </div>
             <span id="activeOrdersCount" class="font-bold text-slate-300">Активных: 0</span>
-        </footer>
+        </div>
+        <div id="servingBar" class="hidden bg-slate-900 border-t border-slate-800 px-3 py-2 shrink-0 flex gap-2">
+            <button onclick="openSummaryModal()" class="flex-1 h-12 bg-amber-500 active:bg-amber-600 text-slate-950 font-bold rounded-2xl shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 text-sm transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                <span>Собрать со станции</span>
+                <span id="totalBadge" class="bg-slate-950 text-amber-400 text-xs font-extrabold px-2 py-0.5 rounded-full">0</span>
+            </button>
+            <button id="clearAllBtn" onclick="confirmAllDelivered()" class="hidden w-12 h-12 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-2xl flex items-center justify-center" aria-label="Всё разнесено" title="Всё разнесено">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </button>
+        </div>
+
+        <!-- ВКЛАДКИ: ЗАКАЗЫ / СЕРВИРОВКА -->
+        <nav class="bg-slate-950 border-t border-slate-800 shrink-0 grid grid-cols-2" style="padding-bottom: env(safe-area-inset-bottom);">
+            <button id="tabOrders" onclick="setMode('orders')" class="h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition">
+                <span class="relative text-lg leading-none">📝<span id="tabOrdersBadge" class="hidden absolute -top-1.5 -right-3 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[9px] font-extrabold flex items-center justify-center"></span></span>
+                <span>Заказы</span>
+            </button>
+            <button id="tabServing" onclick="setMode('serving')" class="h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition">
+                <span class="relative text-lg leading-none">🍽️<span id="tabServingBadge" class="hidden absolute -top-1.5 -right-3 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[9px] font-extrabold flex items-center justify-center"></span></span>
+                <span>Сервировка</span>
+            </button>
+        </nav>
 
         <!-- ЭКРАН ЗАКАЗА ПО СТОЛУ -->
         <div id="orderScreen" class="fixed inset-0 bg-slate-950 z-30 hidden flex flex-col">
@@ -208,6 +234,48 @@
                 <div class="flex gap-2">
                     <button onclick="deleteItemFromSheet()" class="px-4 py-3 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/30 font-bold text-sm">Удалить</button>
                     <button onclick="saveItemSheet()" class="flex-1 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-sm">Готово</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- СЕРВИРОВКА: ЧЕГО НЕТ НА СТОЛЕ -->
+        <div id="serveModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-40 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl">
+                <div class="flex items-center justify-between gap-2 mb-4">
+                    <button onclick="openRenameModal()" class="flex items-center gap-3 min-w-0 text-left" aria-label="Сменить номер стола">
+                        <span id="serveTableBadge" class="min-w-[3rem] h-12 px-2 rounded-2xl bg-amber-500 text-slate-950 font-extrabold text-xl flex items-center justify-center shadow-md shrink-0">9</span>
+                        <span class="min-w-0">
+                            <span id="serveTableTitle" class="block text-lg font-bold text-white truncate">Стол №9 <span class="text-slate-500 text-sm">✎</span></span>
+                            <span id="serveHint" class="block text-xs text-rose-400 font-medium">Нажми на то, чего НЕТ на столе:</span>
+                        </span>
+                    </button>
+                    <button onclick="closeServeModal()" class="w-10 h-10 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <div id="serveGrid" class="grid grid-cols-2 gap-2.5 mb-5"></div>
+                <div class="flex gap-2.5">
+                    <button onclick="serveTableReady()" class="flex-1 py-3.5 px-3 rounded-2xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold text-sm flex items-center justify-center gap-1.5">✓ Всё на месте</button>
+                    <button onclick="closeServeModal()" class="flex-1 py-3.5 px-3 rounded-2xl bg-slate-800 text-white font-bold text-sm">Готово</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- СЕРВИРОВКА: ЧТО ВЗЯТЬ СО СТАНЦИИ -->
+        <div id="summaryModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div class="bg-slate-900 border-t sm:border border-slate-700 w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-5 bottom-safe shadow-2xl max-h-[90%] flex flex-col">
+                <div class="flex items-center justify-between mb-3 shrink-0">
+                    <div>
+                        <h2 class="text-xl font-extrabold text-white">Взять со станции</h2>
+                        <p id="summaryHint" class="text-xs text-slate-400">Нажми на позицию, когда положил на поднос</p>
+                    </div>
+                    <button onclick="closeSummaryModal()" class="w-10 h-10 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-400" aria-label="Закрыть">✕</button>
+                </div>
+                <div class="flex bg-slate-800 p-1 rounded-xl mb-4 shrink-0">
+                    <button id="tabByItem" onclick="switchSummaryTab('item')" class="flex-1 py-2 text-xs font-bold rounded-lg transition">Что взять</button>
+                    <button id="tabByTable" onclick="switchSummaryTab('table')" class="flex-1 py-2 text-xs font-bold rounded-lg transition">Куда нести</button>
+                </div>
+                <div id="summaryContent" class="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2.5"></div>
+                <div id="summaryFooter" class="pt-4 mt-3 border-t border-slate-800 shrink-0">
+                    <button onclick="confirmAllDelivered()" class="w-full py-3.5 rounded-2xl bg-emerald-500 active:bg-emerald-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-emerald-500/20">🎉 Всё разнесено</button>
                 </div>
             </div>
         </div>
@@ -485,6 +553,33 @@
         ];
 
         // ==========================================
+        // СЕРВИРОВКА: что должно стоять на каждом столе
+        // ==========================================
+        const SERVE_ITEMS = [
+            {
+                id: 'sugar', name: 'Сахар',
+                icon: `<svg class="w-6 h-6 inline-block" viewBox="0 0 24 24" fill="none"><rect x="3" y="13" width="8" height="8" rx="1.8" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.8" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.5"/><rect x="8" y="4" width="8" height="8" rx="1.8" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.5"/><circle cx="6" cy="16" r="0.6" fill="#CBD5E1"/><circle cx="16" cy="17" r="0.6" fill="#CBD5E1"/><circle cx="11" cy="7" r="0.6" fill="#CBD5E1"/></svg>`,
+                miniIcon: `<svg class="w-3.5 h-3.5 inline-block" viewBox="0 0 24 24" fill="none"><rect x="2.5" y="13" width="8.5" height="8.5" rx="1.8" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.8"/><rect x="13" y="13" width="8.5" height="8.5" rx="1.8" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.8"/><rect x="7.8" y="3.5" width="8.5" height="8.5" rx="1.8" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1.8"/></svg>`
+            },
+            {
+                id: 'toothpicks', name: 'Зубочистки',
+                icon: `<svg class="w-6 h-6 inline-block" viewBox="0 0 24 24" fill="none"><path d="M9.5 9L8 3.5M12 9V2.5M14.5 9L16 3.5" stroke="#FDE68A" stroke-width="1.5" stroke-linecap="round"/><rect x="7" y="9" width="10" height="13" rx="2.5" fill="#38BDF8" fill-opacity="0.25" stroke="#38BDF8" stroke-width="1.5"/><path d="M7 12.5H17" stroke="#38BDF8" stroke-width="1.2"/></svg>`,
+                miniIcon: `<svg class="w-3.5 h-3.5 inline-block" viewBox="0 0 24 24" fill="none"><path d="M9.5 9L8 3M12 9V2M14.5 9L16 3" stroke="#FDE68A" stroke-width="2" stroke-linecap="round"/><rect x="7" y="9" width="10" height="13" rx="2.5" fill="#38BDF8" fill-opacity="0.35" stroke="#38BDF8" stroke-width="1.8"/></svg>`
+            },
+            { id: 'tomato_sauce', name: 'Соус томатный', icon: '🍅', miniIcon: '🍅' },
+            { id: 'hot_sauce', name: 'Соус острый', icon: '🌶️', miniIcon: '🌶️' },
+            { id: 'salt', name: 'Соль', icon: '🧂', miniIcon: '🧂' },
+            {
+                id: 'pepper', name: 'Перец',
+                icon: `<svg class="w-6 h-6 inline-block" viewBox="0 0 24 24" fill="none"><path d="M8 7H16L17.5 19.5C17.6 20.6 16.7 21.5 15.6 21.5H8.4C7.3 21.5 6.4 20.6 6.5 19.5L8 7Z" fill="#334155" stroke="#94A3B8" stroke-width="1.5"/><path d="M8.5 7V5C8.5 3.6 9.6 2.5 11 2.5H13C14.4 2.5 15.5 3.6 15.5 5V7H8.5Z" fill="#CBD5E1"/><circle cx="11" cy="4.5" r="0.6" fill="#0F172A"/><circle cx="13" cy="4.5" r="0.6" fill="#0F172A"/><circle cx="10.5" cy="13" r="1" fill="#94A3B8"/><circle cx="13.5" cy="15" r="1" fill="#94A3B8"/><circle cx="11.5" cy="17.5" r="1" fill="#94A3B8"/></svg>`,
+                miniIcon: `<svg class="w-3.5 h-3.5 inline-block" viewBox="0 0 24 24" fill="none"><path d="M8 7H16L17.5 19.5C17.6 20.6 16.7 21.5 15.6 21.5H8.4C7.3 21.5 6.4 20.6 6.5 19.5L8 7Z" fill="#334155" stroke="#94A3B8" stroke-width="1.8"/><path d="M8.5 7V5C8.5 3.6 9.6 2.5 11 2.5H13C14.4 2.5 15.5 3.6 15.5 5V7H8.5Z" fill="#CBD5E1"/></svg>`
+            },
+            { id: 'dry_napkins', name: 'Салфетки сухие', icon: '🧻', miniIcon: '🧻' },
+            { id: 'wet_napkins', name: 'Салфетки влажные', icon: '💦', miniIcon: '💦' }
+        ];
+        const SERVE_ITEM_IDS = new Set(SERVE_ITEMS.map(i => i.id));
+
+        // ==========================================
         // ПОИСК: «ё» = «е», без диакритики, транслит
         // ==========================================
         function fold(str) {
@@ -543,12 +638,12 @@
         const newUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
         function freshTable(def) {
-            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [] };
+            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [], missing: [] };
         }
 
         /** Чинит данные из любой версии: недостающие поля, новые столы из схемы по умолчанию. */
         function normalizeState(raw) {
-            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [] };
+            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
             s.removed = Array.isArray(raw?.removed) ? raw.removed.filter(x => typeof x === 'string') : [];
             s.stop = Array.isArray(raw?.stop) ? [...new Set(raw.stop.filter(x => typeof x === 'string' && x.trim()))] : [];
             const src = Array.isArray(raw?.tables) ? raw.tables : [];
@@ -561,6 +656,7 @@
                     activeGuest: Math.max(1, parseInt(t.activeGuest) || 1),
                     posSynced: !!t.posSynced,
                     openedAt: Number(t.openedAt) || 0,
+                    missing: Array.isArray(t.missing) ? [...new Set(t.missing.filter(id => SERVE_ITEM_IDS.has(id)))] : [],
                     items: Array.isArray(t.items) ? t.items.filter(i => i && i.name).map(i => ({
                         uid: String(i.uid || newUid()), name: String(i.name), group: i.group === 'bar' ? 'bar' : 'kitchen',
                         guest: Math.max(1, parseInt(i.guest) || 1), qty: Math.max(1, parseInt(i.qty) || 1),
@@ -638,13 +734,13 @@
                 toast.classList.add('pointer-events-none');
             }
             // Открыто нижнее окно — уведомление сверху, чтобы не закрывать его кнопки; иначе над нижней панелью
-            const sheetOpen = ['modifierModal', 'itemSheet', 'stopListModal', 'guestCountModal', 'renameModal', 'confirmModal'].some(isOpen);
+            const sheetOpen = ['modifierModal', 'itemSheet', 'stopListModal', 'guestCountModal', 'renameModal', 'confirmModal', 'serveModal', 'summaryModal'].some(isOpen);
             if (sheetOpen) {
                 toast.style.top = 'calc(env(safe-area-inset-top) + 64px)';
                 toast.style.bottom = 'auto';
             } else {
                 toast.style.top = 'auto';
-                toast.style.bottom = `calc(${isOpen('orderScreen') ? 76 : 64}px + env(safe-area-inset-bottom))`;
+                toast.style.bottom = `calc(${isOpen('orderScreen') ? 76 : 136}px + env(safe-area-inset-bottom))`;
             }
             toast.classList.remove('opacity-0');
             clearTimeout(toastTimer);
@@ -676,12 +772,16 @@
         function renderMap() {
             const container = $('tablesContainer');
             container.innerHTML = '';
-            let activeCount = 0;
+            const serving = appMode() === 'serving';
+            let activeCount = 0, unsynced = 0, needTables = 0, needTotal = 0;
 
             state.tables.forEach(table => {
                 const total = tableItemCount(table);
                 const hasOrder = tableHasOrder(table);
                 if (hasOrder) activeCount++;
+                if (table.items.length && !table.posSynced) unsynced++;
+                const missing = table.missing.length;
+                if (missing) { needTables++; needTotal += missing; }
 
                 const el = document.createElement('div');
                 el.style.left = `${table.x}%`;
@@ -689,32 +789,85 @@
                 el.style.transform = 'translate(-50%, -50%)';
 
                 let cls = 'table-node absolute w-[16%] min-w-[54px] max-w-[78px] aspect-[4/4.4] rounded-2xl flex flex-col items-center justify-center cursor-pointer border-2 shadow-lg ';
-                if (isEditMode) cls += 'bg-indigo-950/90 border-indigo-400 text-white cursor-move ring-2 ring-indigo-500/30';
-                else if (hasOrder && !table.posSynced) cls += 'bg-amber-500/20 border-amber-400 text-white';
-                else if (hasOrder) cls += 'bg-emerald-500/20 border-emerald-400 text-white';
-                else cls += 'bg-slate-800/85 border-slate-700/90 text-slate-200';
-                el.className = cls;
-
-                let badge = '';
-                if (total > 0 && !isEditMode) {
-                    const color = table.posSynced ? 'bg-emerald-500' : 'bg-amber-500';
-                    badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${color} text-slate-950 font-extrabold text-[11px] flex items-center justify-center shadow">${total}</div>`;
+                let badge = '', sub = '';
+                if (isEditMode) {
+                    cls += 'bg-indigo-950/90 border-indigo-400 text-white cursor-move ring-2 ring-indigo-500/30';
+                    sub = `<span class="text-[9px] text-indigo-300 mt-0.5">✥</span>`;
+                } else if (serving) {
+                    if (missing) {
+                        cls += 'bg-amber-500/20 border-amber-400 text-white needs-attention';
+                        badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-slate-950 font-extrabold text-[11px] flex items-center justify-center shadow">${missing}</div>`;
+                        const icons = table.missing.slice(0, 4).map(id => `<span class="inline-flex items-center justify-center">${SERVE_ITEMS.find(i => i.id === id).miniIcon}</span>`).join('');
+                        sub = `<div class="flex items-center justify-center flex-wrap gap-0.5 mt-1 px-1 text-[11px] leading-none">${icons}${missing > 4 ? `<span class="text-[9px] font-bold text-amber-300">+${missing - 4}</span>` : ''}</div>`;
+                    } else {
+                        cls += 'bg-slate-800/85 border-slate-700/90 text-slate-200';
+                        if (table.label === '?') sub = `<span class="text-[9px] text-slate-400 mt-0.5">новый</span>`;
+                    }
+                } else {
+                    if (hasOrder && !table.posSynced) cls += 'bg-amber-500/20 border-amber-400 text-white';
+                    else if (hasOrder) cls += 'bg-emerald-500/20 border-emerald-400 text-white';
+                    else cls += 'bg-slate-800/85 border-slate-700/90 text-slate-200';
+                    if (total > 0) {
+                        const color = table.posSynced ? 'bg-emerald-500' : 'bg-amber-500';
+                        badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${color} text-slate-950 font-extrabold text-[11px] flex items-center justify-center shadow">${total}</div>`;
+                    }
+                    if (hasOrder) {
+                        const time = elapsedLabel(table.openedAt);
+                        sub = `<span class="text-[9px] font-semibold mt-0.5 ${table.posSynced ? 'text-emerald-300' : 'text-amber-300'}">👤${table.guestCount || 1}${time ? ' · ' + time : ''}</span>`;
+                    } else if (table.label === '?') sub = `<span class="text-[9px] text-slate-400 mt-0.5">новый</span>`;
                 }
-                let sub = '';
-                if (isEditMode) sub = `<span class="text-[9px] text-indigo-300 mt-0.5">✥</span>`;
-                else if (hasOrder) {
-                    const time = elapsedLabel(table.openedAt);
-                    sub = `<span class="text-[9px] font-semibold mt-0.5 ${table.posSynced ? 'text-emerald-300' : 'text-amber-300'}">👤${table.guestCount || 1}${time ? ' · ' + time : ''}</span>`;
-                } else if (table.label === '?') sub = `<span class="text-[9px] text-slate-400 mt-0.5">новый</span>`;
-
+                el.className = cls;
                 el.innerHTML = `${badge}<span class="font-extrabold text-base sm:text-lg leading-none max-w-full px-1 truncate">${esc(table.label)}</span>${sub}`;
                 bindTableNode(el, table);
                 container.appendChild(el);
             });
 
             $('activeOrdersCount').textContent = `Активных столов: ${activeCount}`;
-            $('headerSubtitle').textContent = isEditMode ? 'Редактирование схемы'
-                : activeCount > 0 ? `В работе столов: ${activeCount}` : 'Нажми на стол, чтобы принять заказ';
+            $('totalBadge').textContent = needTotal;
+            $('clearAllBtn').classList.toggle('hidden', !needTotal);
+            setTabBadge('tabOrdersBadge', unsynced);
+            setTabBadge('tabServingBadge', needTables);
+
+            $('headerTitle').textContent = serving ? 'Сервировка зала' : 'Приём заказов';
+            $('stopHeaderBtn').classList.toggle('hidden', serving);
+            const sub = $('headerSubtitle');
+            if (isEditMode) sub.textContent = 'Редактирование схемы';
+            else if (serving) sub.textContent = needTables ? `Пополнить: ${needTables} ст. (${needTotal} поз.)` : 'Все столы укомплектованы';
+            else sub.textContent = activeCount > 0 ? `В работе столов: ${activeCount}` : 'Нажми на стол, чтобы принять заказ';
+            sub.className = `text-xs truncate ${serving && needTables && !isEditMode ? 'text-amber-400 font-medium' : 'text-slate-400'}`;
+        }
+
+        function setTabBadge(id, n) {
+            const b = $(id);
+            b.textContent = n;
+            b.classList.toggle('hidden', !n);
+        }
+
+        // ==========================================
+        // ВКЛАДКИ: ЗАКАЗЫ / СЕРВИРОВКА
+        // ==========================================
+        const appMode = () => state.mode === 'serving' ? 'serving' : 'orders';
+
+        function setMode(mode) {
+            if (appMode() !== mode) {
+                state.mode = mode;
+                // Вкладку запоминаем, но не как изменение данных (не влияет на «Отменить»)
+                const json = JSON.stringify(state);
+                try { localStorage.setItem(LS_KEY, json); } catch (e) {}
+                try { Native && Native.saveState(json); } catch (e) {}
+                vibrate(8);
+            }
+            renderModeChrome();
+            renderMap();
+        }
+
+        function renderModeChrome() {
+            const serving = appMode() === 'serving';
+            $('ordersBar').classList.toggle('hidden', serving);
+            $('servingBar').classList.toggle('hidden', !serving);
+            const base = 'h-14 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition ';
+            $('tabOrders').className = base + (serving ? 'text-slate-500' : 'text-white bg-emerald-500/10 shadow-[inset_0_2px_0_#10b981]');
+            $('tabServing').className = base + (serving ? 'text-white bg-amber-500/10 shadow-[inset_0_2px_0_#f59e0b]' : 'text-slate-500');
         }
 
         function bindTableNode(el, table) {
@@ -801,6 +954,7 @@
                 openRenameModal();
                 return;
             }
+            if (appMode() === 'serving') { openServeModal(tableId); return; }
             if (!tableHasOrder(table)) {
                 pendingGuestTableId = tableId;
                 guestModalMode = 'new';
@@ -1476,7 +1630,9 @@
                 Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [] });
                 saveState();
                 closeOrderScreen();
-                showToast(`Стол ${table.label} закрыт`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+                // Гости ушли — сразу отметить, что пополнить на столе
+                openServeModal(table.id, 'Стол освободился — чего не хватает?');
+                showToast(`Стол ${table.label} закрыт`, { label: 'Отменить', fn: () => { closeServeModal(); restoreSnapshot(snap); } });
             };
             if (!table.items.length) { close(); return; }
             const warn = table.posSynced ? 'Все позиции и гости будут очищены.' : '⚠️ Заказ ещё не отмечен как вбитый в POS. Всё равно очистить?';
@@ -1498,7 +1654,7 @@
 
         function closeRenameModal() {
             hide('renameModal');
-            if (isOpen('orderScreen')) return;
+            if (isOpen('orderScreen') || isOpen('serveModal')) return;
             activeTableId = null;
         }
 
@@ -1514,6 +1670,7 @@
             saveState();
             hide('renameModal');
             if (isOpen('orderScreen')) renderOrderScreen();
+            else if (isOpen('serveModal')) renderServeModal();
             else activeTableId = null;
             renderMap();
             showToast(`Номер стола: ${label}`);
@@ -1821,6 +1978,186 @@
             renderMap();
             if (isOpen('orderScreen') && activeTable()) renderOrderScreen();
             if (isOpen('stopListModal')) renderActiveStopList();
+            if (isOpen('serveModal')) renderServeModal();
+            if (isOpen('summaryModal')) renderSummaryContent();
+        }
+
+        // ==========================================
+        // СЕРВИРОВКА: окно стола и сборка со станции
+        // ==========================================
+        let serveOpenedAt = 0;
+        let serveHintText = '';
+        let summaryTab = 'item';
+        // Что уже положил на поднос (живёт, пока есть столы, которым это нужно)
+        let summaryChecked = {};
+
+        function openServeModal(tableId, hint) {
+            activeTableId = tableId;
+            serveOpenedAt = Date.now();
+            serveHintText = hint || '';
+            renderServeModal();
+            show('serveModal');
+        }
+
+        function closeServeModal() {
+            hide('serveModal');
+            if (!isOpen('orderScreen')) activeTableId = null;
+            renderMap();
+        }
+
+        function renderServeModal() {
+            const table = activeTable();
+            if (!table) return;
+            $('serveTableBadge').textContent = table.label;
+            $('serveTableTitle').innerHTML = `${esc(table.label === '?' ? 'Новый столик' : 'Стол №' + table.label)} <span class="text-slate-500 text-sm">✎</span>`;
+            $('serveHint').textContent = serveHintText || 'Нажми на то, чего НЕТ на столе:';
+            const grid = $('serveGrid');
+            grid.innerHTML = '';
+            SERVE_ITEMS.forEach(item => {
+                const missing = table.missing.includes(item.id);
+                const btn = document.createElement('button');
+                btn.className = missing
+                    ? 'p-3.5 rounded-2xl border-2 border-rose-500 bg-rose-500/20 text-white flex items-center gap-3 text-left transition active:scale-95 shadow-md shadow-rose-500/10'
+                    : 'p-3.5 rounded-2xl border border-slate-700/80 bg-slate-800/60 text-slate-300 flex items-center gap-3 text-left transition active:scale-95';
+                btn.innerHTML = `
+                    <span class="text-2xl shrink-0 w-7 h-7 flex items-center justify-center">${item.icon}</span>
+                    <span class="flex-1 min-w-0">
+                        <span class="block font-bold text-sm leading-tight">${esc(item.name)}</span>
+                        <span class="block text-[10px] mt-0.5 font-semibold ${missing ? 'text-rose-400' : 'text-slate-500'}">${missing ? '❌ Нет на столе' : 'На месте'}</span>
+                    </span>`;
+                btn.onclick = () => {
+                    // Касание, которым открыли окно, не должно сразу отметить позицию
+                    if (Date.now() - serveOpenedAt < 250) return;
+                    const idx = table.missing.indexOf(item.id);
+                    if (idx === -1) table.missing.push(item.id);
+                    else table.missing.splice(idx, 1);
+                    vibrate(8);
+                    saveState();
+                    renderServeModal();
+                };
+                grid.appendChild(btn);
+            });
+        }
+
+        function serveTableReady() {
+            const table = activeTable();
+            if (!table) return;
+            const had = table.missing.length;
+            const snap = snapshot();
+            table.missing = [];
+            saveState();
+            closeServeModal();
+            if (had) showToast(`Стол ${table.label} укомплектован ✓`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+        }
+
+        function openSummaryModal() {
+            renderSummaryTabs();
+            renderSummaryContent();
+            show('summaryModal');
+        }
+
+        function closeSummaryModal() { hide('summaryModal'); }
+
+        function switchSummaryTab(tab) {
+            summaryTab = tab;
+            renderSummaryTabs();
+            renderSummaryContent();
+        }
+
+        function renderSummaryTabs() {
+            const on = 'flex-1 py-2 text-xs font-bold rounded-lg bg-slate-700 text-white shadow transition';
+            const off = 'flex-1 py-2 text-xs font-bold rounded-lg text-slate-400 transition';
+            $('tabByItem').className = summaryTab === 'item' ? on : off;
+            $('tabByTable').className = summaryTab === 'table' ? on : off;
+            $('summaryHint').textContent = summaryTab === 'item' ? 'Нажми на позицию, когда положил на поднос' : 'Отмечай столы, куда уже отнёс';
+        }
+
+        const byLabel = (a, b) => a.label.localeCompare(b.label, undefined, { numeric: true });
+
+        function renderSummaryContent() {
+            const container = $('summaryContent');
+            container.innerHTML = '';
+            const needing = state.tables.filter(t => t.missing.length).sort(byLabel);
+            $('summaryFooter').classList.toggle('hidden', !needing.length);
+
+            if (!needing.length) {
+                summaryChecked = {};
+                container.innerHTML = `
+                    <div class="text-center py-10">
+                        <div class="text-4xl mb-3">✨</div>
+                        <p class="text-base font-bold text-white">Всё чисто и полно!</p>
+                        <p class="text-xs text-slate-400 mt-1">Ни один стол сейчас не требует пополнения.</p>
+                    </div>`;
+                return;
+            }
+
+            if (summaryTab === 'item') {
+                SERVE_ITEMS.forEach(item => {
+                    const targets = needing.filter(t => t.missing.includes(item.id)).map(t => t.label);
+                    if (!targets.length) { delete summaryChecked[item.id]; return; }
+                    const checked = !!summaryChecked[item.id];
+                    const card = document.createElement('button');
+                    card.className = checked
+                        ? 'w-full p-3.5 rounded-2xl bg-slate-800/40 border border-slate-800 flex items-center justify-between gap-3 text-left opacity-60 transition'
+                        : 'w-full p-3.5 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between gap-3 text-left transition active:scale-[0.99]';
+                    card.innerHTML = `
+                        <span class="flex items-center gap-3 min-w-0">
+                            <span class="text-2xl w-7 h-7 flex items-center justify-center shrink-0">${item.icon}</span>
+                            <span class="min-w-0">
+                                <span class="block font-bold text-sm text-white ${checked ? 'line-through' : ''}">${esc(item.name)}</span>
+                                <span class="block text-xs text-amber-400 font-medium mt-0.5">Столы: <span class="text-white font-bold">${targets.map(esc).join(', ')}</span></span>
+                            </span>
+                        </span>
+                        <span class="flex items-center gap-2.5 shrink-0">
+                            <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 font-extrabold text-sm px-2.5 py-1 rounded-xl">×${targets.length}</span>
+                            <span class="w-7 h-7 rounded-lg border-2 ${checked ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600'} flex items-center justify-center font-bold text-sm">${checked ? '✓' : ''}</span>
+                        </span>`;
+                    card.onclick = () => {
+                        summaryChecked[item.id] = !checked;
+                        vibrate(8);
+                        renderSummaryContent();
+                    };
+                    container.appendChild(card);
+                });
+                return;
+            }
+
+            needing.forEach(table => {
+                const card = document.createElement('div');
+                card.className = 'p-3.5 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between gap-3';
+                const chips = table.missing.map(id => {
+                    const it = SERVE_ITEMS.find(i => i.id === id);
+                    return `<span class="inline-flex items-center gap-1 bg-slate-900 border border-slate-700 px-2 py-1 rounded-lg text-xs text-slate-200">${it.miniIcon} ${esc(it.name)}</span>`;
+                }).join('');
+                card.innerHTML = `
+                    <div class="flex items-start gap-3 flex-1 min-w-0">
+                        <div class="min-w-[2.5rem] h-10 px-1.5 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-base flex items-center justify-center shrink-0">${esc(table.label)}</div>
+                        <div class="flex flex-wrap gap-1.5">${chips}</div>
+                    </div>
+                    <button class="h-10 px-3 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold shrink-0">✓ Отнёс</button>`;
+                card.querySelector('button').onclick = () => {
+                    const snap = snapshot();
+                    table.missing = [];
+                    saveState();
+                    rerenderAll();
+                    showToast(`Стол ${table.label} пополнен ✓`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+                };
+                container.appendChild(card);
+            });
+        }
+
+        function confirmAllDelivered() {
+            const n = state.tables.filter(t => t.missing.length).length;
+            if (!n) return;
+            openConfirmModal('Всё разнесено?', `Снять отметки со всех столов (${n})?`, () => {
+                const snap = snapshot();
+                state.tables.forEach(t => { t.missing = []; });
+                summaryChecked = {};
+                saveState();
+                closeSummaryModal();
+                rerenderAll();
+                showToast('Все столы пополнены 🎉', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            });
         }
 
         // ==========================================
@@ -1832,7 +2169,8 @@
         $('menuSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         // Нажатие на затемнённый фон закрывает окно
         [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
-         ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal]]
+         ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal],
+         ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal]]
             .forEach(([id, fn]) => $(id).addEventListener('click', e => { if (e.target.id === id) fn(); }));
 
         // ==========================================
@@ -1846,6 +2184,8 @@
             if (isOpen('modifierModal')) { closeModifierModal(); return true; }
             if (isOpen('guestCountModal')) { closeGuestCountModal(); return true; }
             if (isOpen('stopListModal')) { closeStopListModal(); return true; }
+            if (isOpen('serveModal')) { closeServeModal(); return true; }
+            if (isOpen('summaryModal')) { closeSummaryModal(); return true; }
             if (isOpen('orderScreen')) {
                 if (searchQuery) { clearMenuSearch(); $('menuSearchInput').blur(); return true; }
                 closeOrderScreen();
@@ -1859,8 +2199,9 @@
         function initApp() {
             loadLocal();
             updateStopListBadge();
+            renderModeChrome();
             renderMap();
-            setInterval(() => { if (!isOpen('orderScreen') && !isEditMode) renderMap(); }, 30000);
+            setInterval(() => { if (!isOpen('orderScreen') && !isEditMode && appMode() === 'orders') renderMap(); }, 30000);
         }
 
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
