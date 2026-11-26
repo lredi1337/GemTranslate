@@ -106,9 +106,10 @@
 
         <!-- НИЖНЯЯ СТРОКА РЕЖИМА -->
         <div id="ordersBar" class="bg-slate-900 border-t border-slate-800 px-4 py-2.5 shrink-0 flex items-center justify-center text-[13px] text-slate-400">
-            <div class="flex items-center gap-5">
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Не вбито</span>
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Вбито в POS</span>
+            <div class="flex items-center gap-4">
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Принят</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Вбит</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Всё отдано</span>
             </div>
             <span id="activeOrdersCount" class="hidden"></span>
         </div>
@@ -126,7 +127,7 @@
         <!-- ВКЛАДКИ: ЗАКАЗЫ / СЕРВИРОВКА -->
         <nav class="bg-slate-950 border-t border-slate-800 shrink-0 grid grid-cols-2" style="padding-bottom: env(safe-area-inset-bottom);">
             <button id="tabOrders" onclick="setMode('orders')" class="h-16 flex flex-col items-center justify-center gap-1 text-xs font-bold transition">
-                <span class="relative"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg><span id="tabOrdersBadge" class="hidden absolute -top-1.5 -right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-950 text-[11px] font-extrabold flex items-center justify-center"></span></span>
+                <span class="relative"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/></svg><span id="tabOrdersBadge" class="hidden absolute -top-1.5 -right-3 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[11px] font-extrabold flex items-center justify-center"></span></span>
                 <span>Заказы</span>
             </button>
             <button id="tabServing" onclick="setMode('serving')" class="h-16 flex flex-col items-center justify-center gap-1 text-xs font-bold transition">
@@ -627,7 +628,7 @@
         // ==========================================
         // СОСТОЯНИЕ
         // ==========================================
-        // tables: { id, label, x, y, guestCount, activeGuest, posSynced, openedAt, items: [{ uid, name, group, guest, qty, option, note }] }
+        // tables: { id, label, x, y, guestCount, activeGuest, posSynced, served, openedAt, items: [{ uid, name, group, guest, qty, option, note }] }
         // stop: названия позиций меню и «ингредиенты» (квас, сметана), которых нет
         let state = { ts: 0, tables: [], stop: [], removed: [] };
         let stopSet = new Set();
@@ -662,7 +663,7 @@
         const newUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
         function freshTable(def) {
-            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [], missing: [] };
+            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, items: [], missing: [] };
         }
 
         /** Чинит данные из любой версии: недостающие поля, новые столы из схемы по умолчанию. */
@@ -679,6 +680,7 @@
                     guestCount: Math.max(0, parseInt(t.guestCount) || 0),
                     activeGuest: Math.max(1, parseInt(t.activeGuest) || 1),
                     posSynced: !!t.posSynced,
+                    served: !!t.posSynced && !!t.served,
                     openedAt: Number(t.openedAt) || 0,
                     missing: Array.isArray(t.missing) ? [...new Set(t.missing.filter(id => SERVE_ITEM_IDS.has(id)))] : [],
                     items: Array.isArray(t.items) ? t.items.filter(i => i && i.name).map(i => ({
@@ -784,6 +786,17 @@
         // ==========================================
         function tableItemCount(t) { return t.items.reduce((a, i) => a + i.qty, 0); }
         function tableHasOrder(t) { return t.items.length > 0 || t.guestCount > 0; }
+        /** free — свободен; new — заказ принят, не вбит (красный); pos — вбит, ждут блюда (жёлтый); served — всё отдано (зелёный) */
+        function tableStatus(t) {
+            if (!tableHasOrder(t)) return 'free';
+            if (!t.posSynced) return 'new';
+            return t.served ? 'served' : 'pos';
+        }
+        const STATUS_STYLE = {
+            new: { card: 'bg-rose-500/20 border-rose-400 text-white', badge: 'bg-rose-500 text-white', sub: 'text-rose-200' },
+            pos: { card: 'bg-amber-500/20 border-amber-400 text-white', badge: 'bg-amber-500 text-slate-950', sub: 'text-amber-200' },
+            served: { card: 'bg-emerald-500/20 border-emerald-400 text-white', badge: 'bg-emerald-500 text-slate-950', sub: 'text-emerald-300' }
+        };
 
         function elapsedLabel(since) {
             if (!since) return '';
@@ -828,16 +841,14 @@
                         if (table.label === '?') sub = `<span class="text-[11px] text-slate-400 mt-0.5">новый</span>`;
                     }
                 } else {
-                    if (hasOrder && !table.posSynced) cls += 'bg-amber-500/20 border-amber-400 text-white';
-                    else if (hasOrder) cls += 'bg-emerald-500/20 border-emerald-400 text-white';
-                    else cls += 'bg-slate-800/85 border-slate-700/90 text-slate-200';
-                    if (total > 0) {
-                        const color = table.posSynced ? 'bg-emerald-500' : 'bg-amber-500';
-                        badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${color} text-slate-950 font-extrabold text-[11px] flex items-center justify-center shadow">${total}</div>`;
+                    const st = STATUS_STYLE[tableStatus(table)];
+                    cls += st ? st.card : 'bg-slate-800/85 border-slate-700/90 text-slate-200';
+                    if (total > 0 && st) {
+                        badge = `<div class="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full ${st.badge} font-extrabold text-[11px] flex items-center justify-center shadow">${total}</div>`;
                     }
-                    if (hasOrder) {
+                    if (st) {
                         const time = elapsedLabel(table.openedAt);
-                        sub = `<span class="text-[11px] font-bold mt-1 flex items-center gap-0.5 ${table.posSynced ? 'text-emerald-300' : 'text-amber-200'}">${ICON.person}${table.guestCount || 1}${time ? '<span class="opacity-60 mx-0.5">·</span>' + time : ''}</span>`;
+                        sub = `<span class="text-[11px] font-bold mt-1 flex items-center gap-0.5 ${st.sub}">${ICON.person}${table.guestCount || 1}${time ? '<span class="opacity-60 mx-0.5">·</span>' + time : ''}</span>`;
                     } else if (table.label === '?') sub = `<span class="text-[11px] text-slate-400 mt-0.5">новый</span>`;
                 }
                 el.className = cls;
@@ -858,7 +869,7 @@
             if (isEditMode) sub.textContent = 'Редактирование схемы';
             else if (serving) sub.textContent = needTables ? `Пополнить ${needTables} ${plural(needTables, 'стол', 'стола', 'столов')} · ${needTotal} поз.` : 'Все столы укомплектованы';
             else sub.textContent = activeCount > 0 ? `${activeCount} в работе${unsynced ? ` · ${unsynced} не ${plural(unsynced, 'вбит', 'вбиты', 'вбиты')}` : ''}` : 'Нажми на стол';
-            sub.className = `font-bold text-[15px] leading-tight truncate ${!isEditMode && ((serving && needTables) || (!serving && unsynced)) ? 'text-amber-300' : 'text-white'}`;
+            sub.className = `font-bold text-[15px] leading-tight truncate ${isEditMode ? 'text-white' : (!serving && unsynced) ? 'text-rose-300' : (serving && needTables) ? 'text-amber-300' : 'text-white'}`;
         }
 
         function plural(n, one, few, many) {
@@ -1031,7 +1042,7 @@
             }
             table.guestCount = count;
             table.activeGuest = 1;
-            table.posSynced = false;
+            table.posSynced = false; table.served = false;
             table.openedAt = Date.now();
             saveState();
             closeGuestCountModal();
@@ -1067,6 +1078,8 @@
             const table = activeTable();
             if (!table) return;
             $('orderTableBadge').textContent = table.label;
+            const badgeColor = { new: 'bg-rose-500 text-white', pos: 'bg-amber-500 text-slate-950', served: 'bg-emerald-500 text-slate-950' }[tableStatus(table)] || 'bg-slate-600 text-white';
+            $('orderTableBadge').className = `min-w-[2.5rem] h-10 px-2 rounded-xl ${badgeColor} font-extrabold text-lg flex items-center justify-center shrink-0`;
             $('orderTableTitle').textContent = table.label === '?' ? 'Новый столик' : `Стол №${table.label}`;
             const time = elapsedLabel(table.openedAt);
             $('orderGuestsSubtitle').textContent = `${table.guestCount} ${plural(table.guestCount, 'гость', 'гостя', 'гостей')}${time ? ` · открыт ${time} назад` : ''}`;
@@ -1201,13 +1214,13 @@
                     table.items = table.items.filter(x => x.uid !== item.uid);
                     showToast(`Убрано: ${item.name}`, { label: 'Вернуть', fn: () => restoreSnapshot(snap) });
                 }
-                table.posSynced = false;
+                table.posSynced = false; table.served = false;
                 saveState();
                 renderOrderScreen();
             };
             row.querySelector('.btn-inc').onclick = () => {
                 item.qty += 1;
-                table.posSynced = false;
+                table.posSynced = false; table.served = false;
                 saveState();
                 renderOrderScreen();
             };
@@ -1275,7 +1288,7 @@
                 if (note !== item.note) {
                     item.note = note;
                     mergeDuplicate(table, item);
-                    table.posSynced = false;
+                    table.posSynced = false; table.served = false;
                     saveState();
                     renderOrderScreen();
                 }
@@ -1289,7 +1302,7 @@
             if (item) {
                 const snap = snapshot();
                 table.items = table.items.filter(x => x !== item);
-                table.posSynced = false;
+                table.posSynced = false; table.served = false;
                 saveState();
                 renderOrderScreen();
                 showToast(`Удалено: ${item.name}`, { label: 'Вернуть', fn: () => restoreSnapshot(snap) });
@@ -1608,7 +1621,7 @@
             if (existing) existing.qty += 1;
             else table.items.push({ uid: newUid(), name: item.name, group: item.group, guest, qty: 1, option, note });
             if (!table.openedAt) table.openedAt = Date.now();
-            table.posSynced = false;
+            table.posSynced = false; table.served = false;
             saveState();
             renderOrderScreen();
             vibrate(12);
@@ -1620,30 +1633,46 @@
         // ==========================================
         function renderPosSyncButton(table) {
             const btn = $('togglePosSyncedBtn');
-            if (!table.items.length) {
-                btn.className = 'flex-1 h-12 px-3 rounded-xl bg-slate-800/50 text-slate-500 font-bold text-sm flex items-center justify-center gap-2 cursor-default';
+            const base = 'flex-1 h-12 px-3 rounded-xl font-extrabold text-sm flex items-center justify-center gap-2 transition ';
+            const status = table.items.length ? tableStatus(table) : 'empty';
+            if (status === 'empty') {
+                btn.className = base + 'bg-slate-800/50 text-slate-500 cursor-default';
                 btn.innerHTML = '<span>Заказ пуст</span>';
-            } else if (table.posSynced) {
-                btn.className = 'flex-1 h-12 px-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-sm flex items-center justify-center gap-2 transition';
-                btn.innerHTML = '<span>✓ Вбито в POS</span>';
+            } else if (status === 'new') {
+                // Красный стол → следующий шаг «вбил» (жёлтый)
+                btn.className = base + 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20';
+                btn.innerHTML = '<span>Вбил в POS</span>';
+            } else if (status === 'pos') {
+                // Жёлтый стол → следующий шаг «всё отдал» (зелёный)
+                btn.className = base + 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20';
+                btn.innerHTML = '<span>Всё отдал гостям</span>';
             } else {
-                btn.className = 'flex-1 h-12 px-3 rounded-xl bg-amber-500 text-slate-950 font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 transition';
-                btn.innerHTML = '<span>Отметить: вбил в POS</span>';
+                btn.className = base + 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-300';
+                btn.innerHTML = '<span>✓ Всё отдано</span>';
             }
         }
 
+        /** Шаг вперёд: принят → вбит → всё отдано. С «всё отдано» касание возвращает в «вбит». */
         function toggleTablePosSynced() {
             const table = activeTable();
             if (!table || !table.items.length) return;
-            table.posSynced = !table.posSynced;
-            saveState();
-            renderPosSyncButton(table);
-            if (table.posSynced) {
+            const snap = snapshot();
+            const status = tableStatus(table);
+            if (status === 'new') {
+                table.posSynced = true;
+                table.served = false;
                 vibrate(20);
-                showToast('Отмечено: вбито в POS ✓');
+                showToast('Вбито в POS — стол жёлтый', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
+            } else if (status === 'pos') {
+                table.served = true;
+                vibrate(20);
+                showToast('Всё отдано — стол зелёный ✓', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
             } else {
-                showToast('Отметка «вбито» снята', { label: 'Вернуть', fn: () => { table.posSynced = true; saveState(); renderPosSyncButton(table); } });
+                table.served = false;
+                showToast('Снова ждут блюда — стол жёлтый', { label: 'Отменить', fn: () => restoreSnapshot(snap) });
             }
+            saveState();
+            renderOrderScreen();
         }
 
         function orderAsText(table) {
@@ -1700,7 +1729,7 @@
             if (!table) return;
             const close = () => {
                 const snap = snapshot();
-                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, openedAt: 0, items: [] });
+                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, items: [] });
                 saveState();
                 closeOrderScreen();
                 // Гости ушли — сразу отметить, что пополнить на столе
@@ -1708,7 +1737,10 @@
                 showToast(`Стол ${table.label} закрыт`, { label: 'Отменить', fn: () => { closeServeModal(); restoreSnapshot(snap); } });
             };
             if (!table.items.length) { close(); return; }
-            const warn = table.posSynced ? 'Все позиции и гости будут очищены.' : '⚠️ Заказ ещё не отмечен как вбитый в POS. Всё равно очистить?';
+            const status = tableStatus(table);
+            const warn = status === 'new' ? '⚠️ Заказ ещё не отмечен как вбитый в POS. Всё равно очистить?'
+                : status === 'pos' ? 'Заказ вбит, но не отмечено, что всё отдано. Очистить стол?'
+                : 'Все позиции и гости будут очищены.';
             openConfirmModal(`Закрыть стол ${table.label}?`, warn, close);
         }
 
