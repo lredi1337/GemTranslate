@@ -58,6 +58,14 @@
         #orderPanel.collapsed #currentOrderBox { display: none; }
         #orderPanel.collapsed .chev { transform: rotate(-90deg); }
         .chev { transition: transform 0.2s ease; }
+        /* «Весь стол»: только заказ на весь экран — удобно зачитать гостям */
+        #orderScreen.review-mode #menuControls,
+        #orderScreen.review-mode #menuItemsList { display: none; }
+        #orderScreen.review-mode #orderPanel { flex: 1 1 auto; max-height: none; border-bottom-width: 0; }
+        #orderScreen.review-mode #orderPanelHead { pointer-events: none; }
+        #orderScreen.review-mode #orderPanelHead .chev { display: none; }
+        #orderScreen.review-mode #currentOrderBox { flex: 1 1 auto; padding-bottom: 1rem; }
+        #orderScreen.review-mode .line-name { font-size: 1.0625rem; }
         /* Идёт поиск (открыта клавиатура): заказ гостя, категории и панель POS прячем,
            чтобы результаты были сразу под полем поиска, а не под клавиатурой */
         #orderScreen.search-mode #orderPanel,
@@ -167,7 +175,7 @@
             </div>
 
             <!-- ПОИСК, КУХНЯ / БАР, КАТЕГОРИИ -->
-            <div class="bg-slate-950 px-3 pt-2.5 pb-2 border-b border-slate-800/80 shrink-0 space-y-2">
+            <div id="menuControls" class="bg-slate-950 px-3 pt-2.5 pb-2 border-b border-slate-800/80 shrink-0 space-y-2">
                 <div class="flex gap-2">
                     <div class="relative flex-1">
                         <input id="menuSearchInput" type="search" enterkeyhint="search" autocomplete="off" oninput="onSearchMenu(this.value)" placeholder="Поиск блюда или напитка..." class="w-full h-11 bg-slate-900 border border-slate-700 rounded-xl pl-10 pr-10 text-[15px] text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 [&::-webkit-search-cancel-button]:hidden">
@@ -1152,7 +1160,7 @@
             $('orderPanelTitle').textContent = all ? 'Весь стол' : `Гость ${currentGuestTab}`;
             const summary = $('orderPanelSummary');
             if (!qty) {
-                summary.textContent = 'пока пусто — добавляй из меню ниже';
+                summary.textContent = all ? 'пока пусто' : 'пока пусто — добавляй из меню ниже';
                 summary.className = 'text-[13px] text-slate-400 truncate flex-1 min-w-0';
             } else {
                 const names = items.map(i => i.qty > 1 ? `${i.name} ×${i.qty}` : i.name).join(', ');
@@ -1160,7 +1168,10 @@
                 summary.className = 'text-[13px] text-slate-200 font-semibold truncate flex-1 min-w-0';
             }
             const panel = $('orderPanel');
-            panel.classList.toggle('collapsed', orderCollapsed || !qty);
+            $('orderScreen').classList.toggle('review-mode', all);
+            if (all && document.activeElement === $('menuSearchInput')) $('menuSearchInput').blur();
+            if (all && qty) summary.textContent = `${qty} поз. · ${table.guestCount} ${plural(table.guestCount, 'гость', 'гостя', 'гостей')}`;
+            panel.classList.toggle('collapsed', all ? false : (orderCollapsed || !qty));
             $('orderPanelHead').setAttribute('aria-expanded', String(!orderCollapsed));
         }
 
@@ -1170,6 +1181,7 @@
             box.innerHTML = '';
             if (currentGuestTab === 'all') {
                 if (table.items.length === 0) {
+                    box.innerHTML = `<div class="text-center py-10 text-sm text-slate-400">Заказ по столу пока пуст.<br>Выбери гостя сверху, чтобы добавить блюда.</div>`;
                     return;
                 }
                 for (let g = 1; g <= table.guestCount; g++) {
@@ -1197,7 +1209,7 @@
             const stopped = stopSet.has(item.name);
             row.innerHTML = `
                 <button class="line-open flex-1 min-w-0 text-left py-0.5">
-                    <div class="text-sm font-bold ${stopped ? 'text-rose-300' : 'text-white'} leading-snug">${esc(item.name)}${stopped ? ' <span class="text-xs text-rose-400">· на стопе</span>' : ''}</div>
+                    <div class="line-name text-sm font-bold ${stopped ? 'text-rose-300' : 'text-white'} leading-snug">${esc(item.name)}${stopped ? ' <span class="text-xs text-rose-400">· на стопе</span>' : ''}</div>
                     ${badges.length ? `<div class="flex flex-wrap gap-1 mt-1">${badges.join('')}</div>` : ''}
                 </button>
                 <div class="flex items-center gap-1 shrink-0">
