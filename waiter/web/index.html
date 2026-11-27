@@ -475,6 +475,20 @@
         const MODIFIER_CONFIGS = {
             // Напиток к каждому завтраку-комплексу (меню завтраков)
             breakfast_drink: { prompt: 'Напиток к завтраку на выбор:', options: ['🍊 Апельсиновый сок', '🧊 Вьетнамский чёрный кофе со льдом', '🥛 Вьетнамский кофе с молоком и льдом', '🍹 Холодный сладкий чай', 'Без напитка'] },
+            // Отельные завтраки: мясо на выбор + напиток (тот же список, что в меню отельных завтраков)
+            hotel_pho: { groups: [
+                { prompt: 'Фо — с чем?', options: ['🍗 Курица', '🥩 Говядина'] },
+                { prompt: 'Напиток:', options: ['🍊 Апельсиновый сок', '🧊 Чёрный кофе со льдом', '🥛 Кофе с молоком и льдом', '🍹 Холодный сладкий чай', 'Без напитка'] }
+            ] },
+            hotel_noodles: { groups: [
+                { prompt: 'Ми сао — с чем?', options: ['🍗 Курица', '🥩 Говядина', '🥦 Овощи'] },
+                { prompt: 'Напиток:', options: ['🍊 Апельсиновый сок', '🧊 Чёрный кофе со льдом', '🥛 Кофе с молоком и льдом', '🍹 Холодный сладкий чай', 'Без напитка'] }
+            ] },
+            hotel_stew: { groups: [
+                { prompt: 'Тушёное мясо — какое?', options: ['🍗 Курица', '🥩 Говядина'] },
+                { prompt: 'Напиток:', options: ['🍊 Апельсиновый сок', '🧊 Чёрный кофе со льдом', '🥛 Кофе с молоком и льдом', '🍹 Холодный сладкий чай', 'Без напитка'] }
+            ] },
+            hotel_drink: { prompt: 'Напиток:', options: ['🍊 Апельсиновый сок', '🧊 Чёрный кофе со льдом', '🥛 Кофе с молоком и льдом', '🍹 Холодный сладкий чай', 'Без напитка'] },
             // Каши: на воде, молоке или кокосовом молоке
             porridge_base: { prompt: 'На чём сварить кашу?', options: ['На молоке', 'На воде', 'На кокосовом молоке'] },
             pancake_topping: { prompt: 'Топинг на выбор (сметана — в составе):', options: ['Сгущёнка', 'Джем', 'Мёд'] },
@@ -492,6 +506,10 @@
         const MOD_HINTS = {
             breakfast_drink: ['text-amber-400', '🎁 + напиток на выбор'],
             porridge_base: ['text-emerald-400', '🥛 Молоко / вода / кокосовое'],
+            hotel_pho: ['text-sky-300', 'Курица / говядина + напиток'],
+            hotel_noodles: ['text-sky-300', 'Курица / говядина / овощи + напиток'],
+            hotel_stew: ['text-sky-300', 'Курица / говядина + напиток'],
+            hotel_drink: ['text-sky-300', '+ напиток на выбор'],
             pancake_topping: ['text-amber-400', '🍯 Топинг на выбор'],
             pancake_new: ['text-amber-400', '🍯 Выбор добавки'],
             okroshka_base: ['text-emerald-400', '🥣 Квас или мин. вода с йогуртом'],
@@ -523,6 +541,16 @@
                 { name: 'Блины с творогом' },
                 { name: 'Блины с лососем' },
                 { name: 'Сырники из домашнего творога' }
+            ] },
+            // Только для гостей отеля (отдельное меню «Завтраки», все сеты по одной цене)
+            { id: 'k_01_h', group: 'kitchen', title: '🏨 Отельные завтраки', hotel: true, items: [
+                { code: '1', name: 'Отель: Фо', mod: 'hotel_pho' },
+                { code: '2', name: 'Отель: Ми сао', mod: 'hotel_noodles' },
+                { code: '3', name: 'Отель: Жареный рис с овощами и куриной ножкой', mod: 'hotel_drink' },
+                { code: '4', name: 'Отель: Тушёное мясо с хлебом', mod: 'hotel_stew' },
+                { code: '5', name: 'Отель: Жареный рис, глазунья, сосиска, 2 блина', mod: 'hotel_drink' },
+                { code: '6', name: 'Отель: Рисовая каша, глазунья, сосиска, 2 блина', mod: 'hotel_drink' },
+                { code: '7', name: 'Отель: Овсяная каша, глазунья, сосиска, 2 блина', mod: 'hotel_drink' }
             ] },
             { id: 'k_02', group: 'kitchen', title: '2. Закуски', items: [
                 { name: 'Овощная тарелка' }, { name: 'Сырное ассорти' }, { name: 'Фруктовая тарелка' },
@@ -1671,6 +1699,9 @@
                     : 'h-9 px-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-semibold text-[13px] shrink-0 transition';
                 btn.innerHTML = `${esc(cat.title)}${cat.custom && cat.items.length ? ` <span class="opacity-60">${cat.items.length}</span>` : ''}${stopped ? ` <span class="text-rose-400">·${stopped}</span>` : ''}`;
                 if (cat.custom && !active) btn.className = btn.className.replace('text-slate-300', 'text-amber-300').replace('border-slate-700', 'border-amber-500/40 border-dashed');
+                if (cat.hotel) btn.className = active
+                    ? btn.className.replace('bg-slate-100', 'bg-sky-400')
+                    : btn.className.replace('text-slate-300', 'text-sky-300').replace('border-slate-700', 'border-sky-500/50');
                 btn.onclick = () => {
                     currentCategoryId = cat.id;
                     renderCategoriesBar();
@@ -1769,6 +1800,7 @@
                 else if (item.mod && MOD_HINTS[item.mod]) hint = `<span class="text-xs ${MOD_HINTS[item.mod][0]} font-semibold">${MOD_HINTS[item.mod][1]}</span>`;
                 else if (item.mod && MODIFIER_CONFIGS[item.mod]) hint = `<span class="text-xs text-sky-300 font-semibold">${esc(MODIFIER_CONFIGS[item.mod].options.join(' / '))}</span>`;
                 if (item.customId && !stopped) hint = `<span class="text-xs text-amber-300 font-semibold">★</span>${hint}`;
+                if (!stopped && MENU_CATEGORIES.some(c => c.hotel && c.items.includes(item))) hint = `<span class="text-xs text-sky-300 font-bold">🏨 только гостям отеля</span>${hint}`;
                 const meta = [searching ? `<span class="text-xs text-slate-400">${esc(item.catTitle)}</span>` : '', hint].filter(Boolean).join('');
 
                 card.innerHTML = `
