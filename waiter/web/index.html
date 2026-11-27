@@ -186,7 +186,7 @@
 
             <!-- ТЕКУЩИЙ ЗАКАЗ (сворачивается в одну строку) -->
             <div id="orderPanel" class="bg-emerald-500/[0.07] border-b-2 border-emerald-500/30 shrink-0 max-h-[38%] min-h-0 flex flex-col">
-                <button id="orderPanelHead" onclick="toggleOrderPanel()" class="w-full shrink-0 px-3 h-11 flex items-center gap-2 text-left">
+                <button id="orderPanelHead" onclick="if (event.target.closest('.room-chip')) return; toggleOrderPanel()" class="w-full shrink-0 px-3 h-11 flex items-center gap-2 text-left">
                     <span class="text-emerald-400"><svg class="chev w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
                     <span id="orderPanelTitle" class="text-[13px] font-extrabold uppercase tracking-wide text-emerald-300 shrink-0">Заказ</span>
                     <span id="orderPanelSummary" class="text-[13px] text-slate-300 truncate flex-1 min-w-0"></span>
@@ -402,6 +402,21 @@
                 <div class="flex gap-2 pt-3 shrink-0">
                     <button id="customDeleteBtn" onclick="deleteCustomItem()" class="hidden px-4 py-3 rounded-2xl bg-rose-500/15 text-rose-400 border border-rose-500/30 font-bold text-sm">Удалить</button>
                     <button onclick="saveCustomItem()" class="flex-1 py-3 rounded-2xl bg-emerald-500 text-slate-950 font-extrabold text-sm">Сохранить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ОКНО: НОМЕР КОМНАТЫ (отельные завтраки) -->
+        <div id="roomModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-sky-500/40 w-full max-w-xs rounded-3xl p-5 shadow-2xl text-center">
+                <div class="text-3xl mb-1">🏨</div>
+                <h3 class="text-base font-extrabold text-white">Номер комнаты</h3>
+                <p id="roomModalHint" class="text-[13px] text-slate-400 mb-4 leading-snug">Запомнится за гостем</p>
+                <input id="roomInput" type="text" inputmode="numeric" maxlength="8" enterkeyhint="done" autocomplete="off" placeholder="305" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-center text-2xl font-extrabold text-white placeholder-slate-600 focus:outline-none focus:border-sky-400 mb-3">
+                <div id="roomRecent" class="flex flex-wrap justify-center gap-2 mb-4"></div>
+                <div class="flex gap-2">
+                    <button id="roomSkipBtn" onclick="skipRoom()" class="flex-1 py-3 rounded-xl bg-slate-800 text-slate-300 font-semibold text-sm">Пропустить</button>
+                    <button onclick="saveRoom()" class="flex-1 py-3 rounded-xl bg-sky-400 text-slate-950 font-extrabold text-sm">Сохранить</button>
                 </div>
             </div>
         </div>
@@ -761,6 +776,7 @@
                 it.fold = fold(it.name);
                 it.tr = translit(it.fold);
                 it.catFold = fold(cat.title);
+                it.hotel = !!cat.hotel;
                 ALL_ITEMS.push(it);
             }));
             MENU_NAMES = [...new Set(ALL_ITEMS.map(i => i.name))];
@@ -812,12 +828,19 @@
         const newUid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
         function freshTable(def) {
-            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], missing: [] };
+            return { ...def, guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], rooms: {}, missing: [] };
+        }
+
+        function cleanRooms(r) {
+            const out = {};
+            if (r && typeof r === 'object') Object.entries(r).forEach(([g, v]) => { const room = String(v || '').trim().slice(0, 8); if (room && +g >= 1) out[+g] = room; });
+            return out;
         }
 
         /** Чинит данные из любой версии: недостающие поля, новые столы из схемы по умолчанию. */
         function normalizeState(raw) {
-            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], custom: [], shifts: [], mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
+            const s = { ts: Number(raw?.ts) || 0, tables: [], stop: [], removed: [], custom: [], shifts: [],
+                recentRooms: (Array.isArray(raw?.recentRooms) ? raw.recentRooms : []).map(String).filter(Boolean).slice(0, 8), mode: raw?.mode === 'serving' ? 'serving' : 'orders' };
             // Смены: { id, openedAt, closedAt, tables: [закрытые столы] } — хранятся последние 40
             s.shifts = (Array.isArray(raw?.shifts) ? raw.shifts : []).filter(x => x && x.id && x.openedAt).slice(-40).map(x => ({
                 id: String(x.id), openedAt: Number(x.openedAt), closedAt: Number(x.closedAt) || 0,
@@ -849,6 +872,8 @@
                     posAt: Number(t.posAt) || 0,
                     // Стол сдвинут с другим: заказ общий и хранится у «главного» стола
                     joinedTo: typeof t.joinedTo === 'string' ? t.joinedTo : '',
+                    // Номера комнат гостей отеля: { '1': '305' }
+                    rooms: cleanRooms(t.rooms),
                     missing: Array.isArray(t.missing) ? [...new Set(t.missing.filter(id => SERVE_ITEM_IDS.has(id)))] : [],
                     items: Array.isArray(t.items) ? t.items.filter(i => i && i.name).map(i => ({
                         uid: String(i.uid || newUid()), name: String(i.name), group: i.group === 'bar' ? 'bar' : 'kitchen',
@@ -866,7 +891,7 @@
             s.tables.forEach(t => {
                 const host = t.joinedTo && s.tables.find(x => x.id === t.joinedTo);
                 if (!host || host === t || host.joinedTo) t.joinedTo = '';
-                if (t.joinedTo) Object.assign(t, { guestCount: 0, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
+                if (t.joinedTo) Object.assign(t, { guestCount: 0, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], rooms: {} });
             });
             s.tables.forEach(t => {
                 const maxGuest = t.items.reduce((m, i) => Math.max(m, i.guest), 0);
@@ -1391,7 +1416,7 @@
                 if (!items.length) continue;
                 const head = document.createElement('div');
                 head.className = 'text-xs font-extrabold text-amber-300 uppercase tracking-wider mt-3 mb-1.5 px-1 flex items-center gap-1';
-                head.innerHTML = `${ICON.person} Гость ${g}`;
+                head.innerHTML = `${ICON.person} ${esc(guestTitle(table, g))}`;
                 list.appendChild(head);
                 // Сначала то, что ещё не отнесли
                 [...items].sort((a, b) => ((a.done || 0) >= a.qty) - ((b.done || 0) >= b.qty)).forEach(item => list.appendChild(deliveryRow(table, item)));
@@ -1448,7 +1473,8 @@
                     ? 'h-10 px-3.5 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-[13px] shrink-0 shadow flex items-center gap-1.5 transition'
                     : 'h-10 px-3.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-[13px] shrink-0 flex items-center gap-1.5 transition';
                 const badge = count > 0 ? `<span class="px-1.5 py-px rounded-full text-[11px] font-extrabold ${active ? 'bg-slate-950 text-emerald-400' : 'bg-slate-700 text-white'}">${count}</span>` : '';
-                btn.innerHTML = `<span>Гость ${g}</span>${badge}`;
+                const room = roomOf(table, g);
+                btn.innerHTML = `<span>Гость ${g}</span>${room ? `<span class="text-[11px] font-extrabold ${active ? 'text-sky-900' : 'text-sky-300'}">🏨${esc(room)}</span>` : ''}${badge}`;
                 btn.onclick = () => selectGuestTab(g);
                 container.appendChild(btn);
             }
@@ -1496,7 +1522,7 @@
             const all = currentGuestTab === 'all';
             const items = all ? table.items : table.items.filter(i => i.guest === currentGuestTab);
             const qty = items.reduce((s, i) => s + i.qty, 0);
-            $('orderPanelTitle').textContent = all ? 'Весь стол' : `Гость ${currentGuestTab}`;
+            $('orderPanelTitle').textContent = all ? 'Весь стол' : guestTitle(table, currentGuestTab);
             const summary = $('orderPanelSummary');
             if (!qty) {
                 summary.textContent = all ? 'пока пусто' : 'пока пусто — добавляй из меню ниже';
@@ -1505,6 +1531,10 @@
                 const names = items.map(i => i.qty > 1 ? `${i.name} ×${i.qty}` : i.name).join(', ');
                 summary.textContent = orderCollapsed ? `${qty} поз.: ${names}` : `${qty} поз.`;
                 summary.className = 'text-[13px] text-slate-200 font-semibold truncate flex-1 min-w-0';
+            }
+            // Комната гостя: касание по ней — изменить
+            if (!all && roomOf(table, currentGuestTab)) {
+                $('orderPanelTitle').innerHTML = `Гость ${currentGuestTab} <span class="room-chip ml-1 px-2 py-0.5 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-200 normal-case" onclick="openRoomModal(${currentGuestTab})">🏨 ${esc(roomOf(table, currentGuestTab))} ✎</span>`;
             }
             const panel = $('orderPanel');
             $('orderScreen').classList.toggle('review-mode', all);
@@ -1528,7 +1558,7 @@
                     if (!items.length) continue;
                     const section = document.createElement('div');
                     section.className = 'mb-2 last:mb-0';
-                    section.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1">${ICON.person} Гость ${g}</div>`;
+                    section.innerHTML = `<div class="text-xs font-extrabold text-amber-300 uppercase tracking-wider mb-1 mt-1 flex items-center gap-1">${ICON.person} ${esc(guestTitle(table, g))}</div>`;
                     items.forEach(item => section.appendChild(createOrderLineElement(table, item)));
                     box.appendChild(section);
                 }
@@ -1822,9 +1852,15 @@
                             return;
                         }
                         if (e.target.closest('.btn-edit')) { openCustomModal(item.customId); return; }
-                        if (e.target.closest('.btn-note')) { openModifierModal(item, true); return; }
-                        if (item.mod) openModifierModal(item, false);
-                        else addItemToGuest(item, '', '');
+                        const go = () => {
+                            if (e.target.closest('.btn-note')) { openModifierModal(item, true); return; }
+                            if (item.mod) openModifierModal(item, false);
+                            else addItemToGuest(item, '', '');
+                        };
+                        // Отельный завтрак: если у гостя ещё нет комнаты — сначала спросить её
+                        const t = activeTable();
+                        const g = typeof currentGuestTab === 'number' ? currentGuestTab : 1;
+                        if (item.hotel && t && !roomOf(t, g)) openRoomModal(g, go); else go();
                     },
                     onLong: () => setItemStopped(item.name, !stopped, true)
                 });
@@ -2211,13 +2247,72 @@
             renderOrderScreen();
         }
 
+        const roomOf = (table, g) => (table.rooms || {})[g] || '';
+        /** «Гость 2 · 🏨 305» для заголовков */
+        const guestTitle = (table, g) => `Гость ${g}${roomOf(table, g) ? ` · 🏨 ${roomOf(table, g)}` : ''}`;
+
+        // ==========================================
+        // НОМЕР КОМНАТЫ: запоминается за гостем стола
+        // ==========================================
+        let roomGuest = 1, roomNext = null;
+
+        function openRoomModal(guest, next) {
+            const table = activeTable();
+            if (!table) return;
+            if (document.activeElement === $('menuSearchInput')) $('menuSearchInput').blur();
+            roomGuest = guest;
+            roomNext = next || null;
+            $('roomModalHint').textContent = `Гость ${guest}, стол ${table.label}. Запомнится — следующие отельные блюда этого гостя добавятся без вопроса.`;
+            $('roomInput').value = roomOf(table, guest);
+            $('roomSkipBtn').textContent = next ? 'Пропустить' : 'Отмена';
+            const recent = $('roomRecent');
+            recent.innerHTML = '';
+            (state.recentRooms || []).forEach(r => {
+                const b = document.createElement('button');
+                b.className = 'h-10 px-3.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-200 font-extrabold text-[15px]';
+                b.textContent = r;
+                b.onclick = () => { $('roomInput').value = r; saveRoom(); };
+                recent.appendChild(b);
+            });
+            show('roomModal');
+            setTimeout(() => $('roomInput').focus(), 120);
+        }
+
+        function closeRoomModal() {
+            hide('roomModal');
+            roomNext = null;
+        }
+
+        function saveRoom() {
+            const table = activeTable();
+            if (!table) return closeRoomModal();
+            const room = $('roomInput').value.trim().slice(0, 8);
+            table.rooms = table.rooms || {};
+            if (room) {
+                table.rooms[roomGuest] = room;
+                state.recentRooms = [room, ...(state.recentRooms || []).filter(r => r !== room)].slice(0, 8);
+            } else delete table.rooms[roomGuest];
+            saveState();
+            const next = roomNext;
+            closeRoomModal();
+            $('roomInput').blur();
+            renderOrderScreen();
+            if (next) next(); else if (room) showToast(`Гость ${roomGuest}: комната ${room}`);
+        }
+
+        function skipRoom() {
+            const next = roomNext;
+            closeRoomModal();
+            if (next) next();
+        }
+
         function orderAsText(table) {
             const title = table.label === '?' ? 'Новый столик' : `Стол ${table.label}`;
             const lines = [`${title} · гостей: ${table.guestCount}`];
             for (let g = 1; g <= table.guestCount; g++) {
                 const items = table.items.filter(i => i.guest === g);
                 if (!items.length) continue;
-                lines.push('', `Гость ${g}:`);
+                lines.push('', `Гость ${g}${roomOf(table, g) ? ` (комната ${roomOf(table, g)})` : ''}:`);
                 ['kitchen', 'bar'].forEach(group => items.filter(i => i.group === group).forEach(i => {
                     const extra = [i.option, i.note && `💬 ${i.note}`].filter(Boolean).join(' · ');
                     lines.push(`— ${i.name}${i.qty > 1 ? ' ×' + i.qty : ''}${extra ? ' (' + extra + ')' : ''}`);
@@ -2268,7 +2363,7 @@
                 const snap = snapshot();
                 recordClosedTable(table);
                 joinedOf(table).forEach(t => { t.joinedTo = ''; });
-                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
+                Object.assign(table, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], rooms: {} });
                 saveState();
                 closeOrderScreen();
                 // Гости ушли — сразу отметить, что пополнить на столе
@@ -2652,7 +2747,7 @@
             shift.tables.push({
                 id: 'r_' + newUid(), tableId: table.id, label: groupLabel(table), guestCount: table.guestCount,
                 openedAt: table.openedAt || Date.now(), closedAt: Date.now(), status: tableStatus(table), note: note || '',
-                items: JSON.parse(JSON.stringify(table.items))
+                items: JSON.parse(JSON.stringify(table.items)), rooms: { ...(table.rooms || {}) }
             });
         }
 
@@ -2764,7 +2859,7 @@
                 const snap = snapshot();
                 active.forEach(t => {
                     recordClosedTable(t, 'открыт при закрытии смены');
-                    Object.assign(t, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
+                    Object.assign(t, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], rooms: {} });
                 });
                 state.tables.forEach(t => { t.joinedTo = ''; });
                 shift.closedAt = Date.now();
@@ -2797,7 +2892,7 @@
             guests.forEach(g => {
                 const head = document.createElement('div');
                 head.className = 'text-xs font-extrabold text-amber-300 uppercase tracking-wider mt-2 mb-1 flex items-center gap-1';
-                head.innerHTML = `${ICON.person} Гость ${g}`;
+                head.innerHTML = `${ICON.person} ${esc(guestTitle(rec, g))}`;
                 box.appendChild(head);
                 rec.items.filter(i => i.guest === g).forEach(i => {
                     const row = document.createElement('div');
@@ -2815,7 +2910,7 @@
             const found = findRecord(historyRef);
             if (!found) return;
             const r = found.rec;
-            const text = orderAsText({ label: r.label, guestCount: r.guestCount, items: r.items });
+            const text = orderAsText({ label: r.label, guestCount: r.guestCount, items: r.items, rooms: r.rooms });
             showToast(await copyText(text) ? 'Заказ скопирован ✓' : 'Не получилось скопировать');
         }
 
@@ -2830,7 +2925,7 @@
                     guestCount: Math.max(1, rec.guestCount, ...rec.items.map(i => i.guest)), activeGuest: 1,
                     posSynced: rec.status !== 'new', served: rec.status === 'served',
                     openedAt: rec.openedAt, changedAt: Date.now(), posAt: rec.status !== 'new' ? Date.now() : 0,
-                    items: rec.items.map(i => ({ ...i, uid: newUid() }))
+                    items: rec.items.map(i => ({ ...i, uid: newUid() })), rooms: cleanRooms(rec.rooms)
                 });
                 shift.tables = shift.tables.filter(x => x !== rec);
                 saveState();
@@ -2951,8 +3046,8 @@
             showToast(`Освобождены: ${labels}. Заказ остался на ${host.label}`, { label: 'Отменить', fn: () => restoreSnapshot(snap) });
         }
 
-        const TABLE_ORDER_FIELDS = ['guestCount', 'activeGuest', 'posSynced', 'served', 'openedAt', 'changedAt', 'posAt', 'items'];
-        const clearOrderFields = t => Object.assign(t, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [] });
+        const TABLE_ORDER_FIELDS = ['guestCount', 'activeGuest', 'posSynced', 'served', 'openedAt', 'changedAt', 'posAt', 'items', 'rooms'];
+        const clearOrderFields = t => Object.assign(t, { guestCount: 0, activeGuest: 1, posSynced: false, served: false, openedAt: 0, changedAt: 0, posAt: 0, items: [], rooms: {} });
 
         function moveTable(from, to) {
             const snap = snapshot();
@@ -2975,6 +3070,7 @@
                     const snap = snapshot();
                     const offset = to.guestCount;
                     to.items.push(...from.items.map(i => ({ ...i, uid: newUid(), guest: i.guest + offset })));
+                    Object.entries(from.rooms || {}).forEach(([g, room]) => { to.rooms = to.rooms || {}; to.rooms[+g + offset] = room; });
                     to.guestCount += Math.max(from.items.length ? 1 : 0, from.guestCount);
                     to.openedAt = Math.min(to.openedAt || Date.now(), from.openedAt || Date.now());
                     // Общий статус — «самый ранний»: если хоть что-то не вбито, стол красный
@@ -3190,6 +3286,7 @@
         // ==========================================
         $('renameInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveTableName(); } });
         $('modCustomNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!$('modConfirmBtn').disabled) confirmModifierSelection(); else e.target.blur(); } });
+        $('roomInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveRoom(); } });
         $('customName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
         $('itemSheetNote').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveItemSheet(); } });
         $('menuSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
@@ -3220,7 +3317,7 @@
         [['modifierModal', closeModifierModal], ['itemSheet', saveItemSheet], ['stopListModal', closeStopListModal],
          ['renameModal', closeRenameModal], ['confirmModal', closeConfirmModal], ['guestCountModal', closeGuestCountModal],
          ['serveModal', closeServeModal], ['summaryModal', closeSummaryModal], ['tableMenuModal', closeTableMenu], ['customModal', closeCustomModal],
-         ['pickerModal', closePicker], ['historyModal', closeHistoryModal]]
+         ['pickerModal', closePicker], ['historyModal', closeHistoryModal], ['roomModal', closeRoomModal]]
             .forEach(([id, fn]) => $(id).addEventListener('click', e => { if (e.target.id === id) fn(); }));
 
         // ==========================================
@@ -3230,6 +3327,7 @@
         function handleBack() {
             if (isOpen('confirmModal')) { closeConfirmModal(); return true; }
             if (isOpen('pickerModal')) { closePicker(); return true; }
+            if (isOpen('roomModal')) { closeRoomModal(); return true; }
             if (isOpen('historyModal')) { closeHistoryModal(); return true; }
             if (isOpen('tableMenuModal')) { closeTableMenu(); return true; }
             if (isOpen('customModal')) { closeCustomModal(); return true; }
