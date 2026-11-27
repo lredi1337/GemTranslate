@@ -473,15 +473,11 @@
         // БАЗА МЕНЮ (КУХНЯ 1–17 И БАР 18–42)
         // ==========================================
         const MODIFIER_CONFIGS = {
-            breakfast_drink: { prompt: 'Напиток в подарок к завтраку:', options: ['☕ Американо', '🍊 Апельсиновый сок', 'Без напитка'] },
-            // Несколько выборов у одной позиции: каждый — своя строка кнопок
-            porridge_type: {
-                groups: [
-                    { prompt: 'Каша:', options: ['🥣 Овсяная', '🍚 Рисовая'] },
-                    { prompt: 'Напиток в подарок:', options: ['☕ Американо', '🍊 Апельсиновый сок', 'Без напитка'] }
-                ]
-            },
-            pancake_topping: { prompt: 'Выбери добавку к блинам:', options: ['Сгущёнка', 'Сметана', 'Джем', 'Без добавки'] },
+            // Напиток к каждому завтраку-комплексу (меню завтраков)
+            breakfast_drink: { prompt: 'Напиток к завтраку на выбор:', options: ['🍊 Апельсиновый сок', '🧊 Вьетнамский чёрный кофе со льдом', '🥛 Вьетнамский кофе с молоком и льдом', '🍹 Холодный сладкий чай', 'Без напитка'] },
+            // Каши: на воде, молоке или кокосовом молоке
+            porridge_base: { prompt: 'На чём сварить кашу?', options: ['На молоке', 'На воде', 'На кокосовом молоке'] },
+            pancake_topping: { prompt: 'Топинг на выбор (сметана — в составе):', options: ['Сгущёнка', 'Джем', 'Мёд'] },
             pancake_new: { prompt: 'Выбери добавку к домашним блинам:', options: ['Мёд', 'Сметана', 'Сгущённое молоко', 'Джем'] },
             okroshka_base: { prompt: 'На чём готовить окрошку?', options: ['На квасе', 'На минеральной воде с йогуртом'] },
             salad_dressing: { prompt: 'Чем заправить салат?', options: ['Оливковое масло', 'Сметана'] },
@@ -494,9 +490,9 @@
 
         // Подсказка под названием позиции с опцией
         const MOD_HINTS = {
-            breakfast_drink: ['text-amber-400', '🎁 + Американо или сок'],
-            porridge_type: ['text-amber-400', '🥣 Овсяная/рисовая + 🎁 напиток'],
-            pancake_topping: ['text-amber-400', '🍯 Выбор добавки'],
+            breakfast_drink: ['text-amber-400', '🎁 + напиток на выбор'],
+            porridge_base: ['text-emerald-400', '🥛 Молоко / вода / кокосовое'],
+            pancake_topping: ['text-amber-400', '🍯 Топинг на выбор'],
             pancake_new: ['text-amber-400', '🍯 Выбор добавки'],
             okroshka_base: ['text-emerald-400', '🥣 Квас или мин. вода с йогуртом'],
             salad_dressing: ['text-emerald-400', '🥗 Масло или сметана'],
@@ -508,20 +504,25 @@
         };
 
         // Позиция меню на стопе → какие варианты опций она тоже закрывает (кроме совпадения по словам)
-        const OPTION_ALIASES = { 'Фреш Апельсиновый': ['апельсиновый сок'] };
+        const OPTION_ALIASES = { 'Фреш Апельсиновый': ['апельсиновый сок'], 'Кофе со сгущённым молоком': ['кофе с молоком и льдом'] };
 
         const MENU_CATEGORIES = [
-            { id: 'k_01_1', group: 'kitchen', title: '1. Завтраки', items: [
-                { name: 'Большой домашний завтрак', mod: 'breakfast_drink' },
-                { name: 'English Breakfast', mod: 'breakfast_drink' },
-                { name: 'Омлет с сыром и овощами', mod: 'breakfast_drink' },
-                { name: 'Авокадо-тост с лососем', mod: 'breakfast_drink' },
-                { name: 'Авокадо-тост с двумя яйцами пашот', mod: 'breakfast_drink' },
-                { name: 'Блины с добавкой на выбор', mod: 'pancake_topping' },
-                { name: 'Блины с творогом', mod: 'breakfast_drink' },
-                { name: 'Молочная каша', mod: 'porridge_type' },
-                { name: 'Тропический йогурт-боул', mod: 'breakfast_drink' },
-                { name: 'Bánh mì с яйцом', mod: 'breakfast_drink' }
+            // Меню завтраков: комплексы (напиток на выбор) и сладкие / лёгкие
+            { id: 'k_01_1', group: 'kitchen', title: '1. Завтраки-комплексы', items: [
+                { name: 'Домашний завтрак', mod: 'breakfast_drink' },
+                { name: 'Сытный домашний завтрак с жареным рисом', mod: 'breakfast_drink' },
+                { name: 'Домашний завтрак с рисовой кашей', mod: 'breakfast_drink' },
+                { name: 'Домашний завтрак с овсяной кашей', mod: 'breakfast_drink' },
+                { name: 'Завтрак с блинами и тосты скрэмбл и бекон', mod: 'breakfast_drink' },
+                { name: 'Завтрак с блинами и тостами лосось и авокадо', mod: 'breakfast_drink' }
+            ] },
+            { id: 'k_01_2', group: 'kitchen', title: '1. Сладкие завтраки', items: [
+                { name: 'Рисовая каша', mod: 'porridge_base' },
+                { name: 'Овсяная каша', mod: 'porridge_base' },
+                { name: 'Блины с топингом', mod: 'pancake_topping' },
+                { name: 'Блины с творогом' },
+                { name: 'Блины с лососем' },
+                { name: 'Сырники из домашнего творога' }
             ] },
             { id: 'k_02', group: 'kitchen', title: '2. Закуски', items: [
                 { name: 'Овощная тарелка' }, { name: 'Сырное ассорти' }, { name: 'Фруктовая тарелка' },
@@ -587,10 +588,13 @@
                 { name: 'Шаурма «SOUL» с курицей' }, { name: 'Шаурма «SOUL» с фалафелем' },
                 { name: 'Шаурма восточная с курицей' }, { name: 'Шаурма восточная с фалафелем' }
             ] },
+            // code — номер из меню: по нему тоже ищется («17.3»)
             { id: 'k_17', group: 'kitchen', title: '17. Азиатская кухня', items: [
-                { name: 'Фо Га с курицей' }, { name: 'Фо Бо с говядиной' }, { name: 'Га Сао с курицей' },
-                { name: 'Бо Сао с говядиной' }, { name: 'Жареный рис с морепродуктами' }, { name: 'Жареная лапша с овощами' },
-                { name: 'Жареная лапша с курицей' }, { name: 'Жареная лапша с говядиной' }, { name: 'Жареная лапша с морепродуктами' }
+                { code: '17.1', name: 'Фо Га с курицей' }, { code: '17.2', name: 'Фо Бо с говядиной' },
+                { code: '17.3', name: 'Га Сао с курицей' }, { code: '17.4', name: 'Бо Сао с говядиной' },
+                { code: '17.5', name: 'Жареный рис с морепродуктами' }, { code: '17.6', name: 'Жареная лапша с овощами' },
+                { code: '17.7', name: 'Жареная лапша с курицей' }, { code: '17.8', name: 'Жареная лапша с говядиной' },
+                { code: '17.9', name: 'Жареная лапша с морепродуктами' }
             ] },
             { id: 'b_18_19', group: 'bar', title: '18–19 Кофе', items: [
                 { name: 'Эспрессо' }, { name: 'Двойной эспрессо' }, { name: 'Американо' }, { name: 'Капучино' },
@@ -1697,6 +1701,12 @@
         }
 
         function searchMenu(query) {
+            // Номер из меню: «17.3», «17,3»
+            const code = query.trim().replace(',', '.');
+            if (/^\d+\.\d*$/.test(code)) {
+                const byCode = ALL_ITEMS.filter(i => i.code && i.code.startsWith(code));
+                if (byCode.length) return byCode;
+            }
             const words = fold(query).split(' ').filter(Boolean);
             if (!words.length) return [];
             const scored = [];
@@ -1763,7 +1773,7 @@
 
                 card.innerHTML = `
                     <div class="flex-1 min-w-0 ${stopped ? 'opacity-60' : ''}">
-                        <div class="font-semibold text-[15px] ${stopped ? 'line-through text-slate-400' : 'text-slate-50'} leading-snug">${esc(item.name)}</div>
+                        <div class="font-semibold text-[15px] ${stopped ? 'line-through text-slate-400' : 'text-slate-50'} leading-snug">${item.code ? `<span class="text-slate-400 font-bold mr-1.5">${item.code}</span>` : ''}${esc(item.name)}</div>
                         ${meta ? `<div class="flex flex-wrap items-center gap-x-2 mt-0.5">${meta}</div>` : ''}
                     </div>
                     ${stopped
